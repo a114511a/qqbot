@@ -1,0 +1,27 @@
+services:
+  napcat:
+    image: mlikiowa/napcat-docker:latest
+    container_name: napcat
+    restart: unless-stopped
+    environment:
+      MODE: reverse_ws
+      # NoneBot 在宿主机运行时，NapCat 容器用 host.docker.internal 回连宿主机。
+      ONEBOT_URL: ws://host.docker.internal:8080/onebot/v11/ws
+      # 机器人 QQ 号。容器重建时 NapCat 用它做「快速登录」，直接复用 data/qq 里
+      # 已保存的登录态，不需要重新扫码。留空则回退为二维码登录。
+      ACCOUNT: ${QQ_ACCOUNT:-}
+      # 仅用于 NapCat WebUI 登录，不等于 OneBot Access Token。
+      WEBUI_TOKEN: ${NAPCAT_WEBUI_TOKEN:?请在 .env 中设置 NAPCAT_WEBUI_TOKEN}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      # 只绑定本机，避免将管理界面暴露到局域网/公网。
+      - "127.0.0.1:6099:6099"
+      - "127.0.0.1:3001:3001"
+    volumes:
+      # 持久化 QQ 登录态、NapCat 配置和插件。
+      - ./data/qq:/app/.config/QQ
+      - ./data/napcat-config:/app/napcat/config
+      - ./data/napcat-plugins:/app/napcat/plugins
+      # 机器人生成的报告图片给 NapCat 读取；只读挂载，发送后由机器人清理。
+      - ./data/reports:/app/qqbot-reports:ro

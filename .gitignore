@@ -1,0 +1,18 @@
+# Python 虚拟环境与依赖缓存
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+
+# 本地配置：含 OneBot token、NapCat WebUI token、落雪密钥等，绝不提交
+.env
+
+# 运行时数据：QQ 登录态、绑定库、曲目缓存、临时报告图
+/data/
+
+# 系统与临时文件
+.DS_Store
+*.tmp
+
+# 运行期产物与参考图（含真实/第三方数据，不入库）
+/outputs/
