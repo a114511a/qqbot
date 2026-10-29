@@ -9,8 +9,28 @@ dependencies = [
     "nonebot-adapter-onebot>=2.4.6,<3.0.0",
     "httpx>=0.28,<1",
     "pillow>=11,<13",
+    "nonebot-plugin-alconna>=0.59.4",
+    "nonebot-plugin-orm[sqlite]>=0.8.2",
+    "maimai-py>=1.6.0",
+    "playwright>=1.41.0",
+    "async-lru>=2.0.5",
+    "numpy>=1.26,<2.4",
+    "matplotlib>=3.9.4",
+    "nonebot-plugin-rikka-extra<1.0.0",
+    "nonebot-plugin-session>=0.3.2",
+    "nonebot-plugin-apscheduler>=0.5.0",
+    "nonebot-plugin-localstore>=0.7.4",
+    "aiosqlite>=0.22.1",
 ]
 
 [tool.nonebot]
 adapter = ["nonebot.adapters.onebot.v11"]
 plugin_dirs = ["src/plugins"]
+
+[dependency-groups]
+dev = [
+    "nb-cli>=1.7.4",
+]
+# 注意：不要在这里再写 plugins = ["nonebot_plugin_rikka"]。
+# src/plugins 下所有插件包会被 plugin_dirs 自动扫描加载，显式声明会导致
+# "Plugin already exists" 报错。Rikka 已 vendor 到 src/plugins/nonebot_plugin_rikka。

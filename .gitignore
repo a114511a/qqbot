@@ -16,3 +16,15 @@ __pycache__/
 
 # 运行期产物与参考图（含真实/第三方数据，不入库）
 /outputs/
+
+# 静态资源（4.5MB 曲目拟合数据 + 后续下载的封面/名牌），按需自行获取
+# 只保留目录占位与 music_chart.json 说明，实际图片资源不入库
+/static/mai/cover/
+/static/mai/plate/
+/static/mai/icon/
+/static/mai/frame/
+/static/mai/pic/
+/static/font/
+
+# 运行日志（Rikka 会写入 logs/），可能含 QQ 号与请求细节
+/logs/

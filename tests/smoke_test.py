@@ -33,9 +33,13 @@ GROUP_ID = "222222"
 LOG_PATH = Path("/tmp/qqbot_smoke_test.log")
 
 # (指令, 是否群聊, 回复里必须出现的关键词)
+# /help 现在是三层索引：裸 /help 只给分类入口，具体指令在 /help mai、/help chu、/help bind。
 CHECKS: list[tuple[str, bool, list[str]]] = [
-    ("/help", False, ["/底力分析", "/中二绑定", "/中二解绑", "/hello", "落雪", "群聊"]),
-    ("/菜单", True, ["/底力分析", "群聊"]),
+    ("/help", False, ["/help mai", "/help chu", "/help bind", "索引"]),
+    ("/help mai", True, ["舞萌", "/mai b50"]),
+    ("/help chu", True, ["中二节奏", "/chu b30", "/底力分析"]),
+    ("/help bind", False, ["/bind lxns", "共用"]),
+    ("/菜单", True, ["/help mai", "索引"]),
     ("/hello", True, ["喊我干啥"]),
     ("/底力分析", True, ["绑定"]),
     ("/中二绑定状态", False, ["没有绑定"]),
@@ -152,8 +156,16 @@ async def main() -> int:
     for line in log_text.splitlines():
         if "Succeeded to load plugin" in line or "ERROR" in line:
             print(line)
-    for plugin in ("chunithm_bot", "help", "hello"):
-        assert f'Succeeded to load plugin "{plugin}"' in log_text, f"{plugin} 未加载成功"
+    # Rikka 插件会接管 loguru 输出格式（带 ANSI 颜色码），所以不能按原始字符串精确匹配
+    # `Succeeded to load plugin "x"`。改成先剥离 ANSI 转义，再检查插件名是否出现在加载日志里。
+    import re as _re
+
+    plain_log = _re.sub(r"\x1b\[[0-9;]*m", "", log_text)
+    for plugin in ("chunithm_bot", "help", "hello", "nonebot_plugin_rikka"):
+        assert (
+            f'Succeeded to load plugin "{plugin}"' in plain_log
+            or f"Succeeded to load plugin {plugin}" in plain_log
+        ), f"{plugin} 未加载成功"
     assert "ERROR" not in log_text, "启动日志出现 ERROR"
 
     print("\nPASS: 插件加载、群聊/私聊指令匹配与回复全部正常")

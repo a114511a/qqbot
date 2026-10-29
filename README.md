@@ -71,11 +71,35 @@ src/plugins/
 │   ├── lxns.py            落雪 API 客户端：URL、鉴权、错误翻译、曲目缓存
 │   ├── analysis.py        数据层：绑定库、统计、AI 简报、报告渲染
 │   └── commands.py        指令层：/中二绑定系列、/底力分析
-├── help.py                /help 帮助
+├── nonebot_plugin_rikka/  舞萌/中二查分插件（已按本项目改造，见下）
+├── help.py                /help 三层索引帮助
 └── hello.py               /hello 连通性测试
 ```
 
 依赖方向单向：`commands → analysis → lxns`。要给机器人加新的落雪能力（查趋势、查单曲排名等），在 `lxns.py` 里加一个 `async def fetch_xxx()` 即可，URL、鉴权和错误翻译都复用现成的基础层；分析逻辑再在 `analysis.py` 里组合。
+
+### 查分插件（Rikka，已改造）
+
+`src/plugins/nonebot_plugin_rikka/` 是从 [Moemu/Nonebot-Plugin-Rikka](https://github.com/Moemu/Nonebot-Plugin-Rikka) vendor 进来并改造的，与原版的差异：
+
+| 改造点 | 说明 |
+| --- | --- |
+| 不需要 @机器人 | 移除了全部 32 处 `to_me()` 规则，群里直接发指令即可 |
+| 去掉点前缀 | `COMMAND_PREFIXES` 只保留 `/`，不再支持 `.mai b50` 写法 |
+| 复用落雪密钥 | 开发者密钥统一读 `.env` 的 `LXNS_DEV_TOKEN`，不再单独配 `LXNS_DEVELOPER_API_KEY` |
+| 免重复绑定 | 复用底力分析的 `bindings` 表，那边绑过这里直接用（见 `shared_binding.py`） |
+| help 索引化 | `/help` 只给三类入口，`/help mai`、`/help chu`、`/help bind` 给具体指令 |
+| 删除店铺查询 | 移除 `location-mai` / `location-chu` 全部指令与订阅逻辑 |
+
+**共享绑定的边界**：底力分析的表只有 `user_id / friend_code / player_name`，没有个人 API 密钥，所以「共享」覆盖好友码与开发者密钥；落雪个人密钥（`/bind lxns <个人API密钥>`）仍只存在 Rikka 自己的库里，只有少数需要个人 API 的功能才要求它。
+
+**静态资源**：成绩图需要舞萌封面、名牌与字体，体积较大且上游下载链接已失效，仓库只保留 `static/music_chart.json`。缺资源时插件会告警并回退纯色背景，不影响指令可用；要完整效果请自行准备 `static/mai/{cover,plate,icon,frame,pic}` 与 `static/font`。
+
+**数据库**：Rikka 使用 `data/rikka.sqlite3`（ORM 管理），与底力分析的 `data/chunithm.sqlite3` 相互独立。首次部署需执行迁移：
+
+```bash
+uv run nb orm upgrade
+```
 
 ### 中二节奏底力分析
 
@@ -157,7 +181,8 @@ QQ 消息正文只发「玩家名 · Rating + 数据截至时间」，**不再�
 
 ### 帮助与测试
 
-- `/help`：列出全部指令（别名 `/帮助`、`/指令`、`/菜单`），群聊私聊都可用。
+- `/help`：三层索引帮助（别名 `/帮助`、`/指令`、`/菜单`）。裸 `/help` 只给三类入口，
+  `/help mai`、`/help chu`、`/help bind` 分别查看舞萌、中二、账号绑定的具体指令。
 - `/hello`：连通性测试（别名 `/你好`），能回复说明 QQ ↔ NapCat ↔ NoneBot 链路正常。
 
 改完插件后可以在项目根目录跑测试，三个都可以直接在项目里执行：
@@ -175,6 +200,9 @@ QQ 消息正文只发「玩家名 · Rating + 数据截至时间」，**不再�
 # 真实数据流程测试：真的调用落雪 API，走「绑定 → 确认 → 出报告 → 解绑」全流程。
 # 需要 .env 里配好 LXNS_DEV_TOKEN；用假 QQ 号 10001，结束时会自动解绑。
 TEST_FRIEND_CODE=你的好友码 ./.venv/bin/python tests/binding_flow_test.py
+
+# Rikka 改造验收测试：离线，检查去 @、去点前缀、共享绑定、help 索引、店铺查询已删。
+./.venv/bin/python tests/rikka_customization_test.py
 ```
 
 前两个不联网，可以随时跑；第三个会消耗落雪 API 请求并读写本地绑定库。三个测试都通过说明：插件能加载、指令能回复、算法统计性质没退化、真实链路端到端通。
