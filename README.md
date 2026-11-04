@@ -226,3 +226,23 @@ TEST_FRIEND_CODE=你的好友码 ./.venv/bin/python tests/binding_flow_test.py
 ## 许可
 
 尚未选定开源许可证。在明确许可证前，默认保留所有权利；如需引用或分发请先联系仓库作者。
+
+### 静态资源补充说明（2026-11）
+
+`/chu b30` 等成绩图渲染依赖游戏 UI 素材。**中二节奏资源已补齐**，mai（舞萌）资源部分缺失：
+
+| 资源 | 状态 | 说明 |
+| --- | --- | --- |
+| `static/chu/pic`（143） | ✅ 完整 | 评级图标、徽章、背景、logo |
+| `static/chu/plate`（1） | ✅ 完整 | 名牌底图 |
+| `static/chu/icon`（2） | ✅ 完整 | 角色头像 |
+| `static/chu/font`（2） | ✅ 完整 | FOT-RodinNTLGPro B/EB |
+| `static/mai/cover`（1682） | ✅ 完整 | 曲绘 |
+| `static/mai/pic`（233） | ⚠️ 缺 16 个 | 缺 `UI_CMN_DXRating_*.png`（评级图）、`b50_bg.png`、`ra.png`、`ra-dx.png`、`fcfs_score.png`、`UI_DNM_DaniPlate_24.png` |
+| `static/mai/plate` / `icon` / `frame` | ❌ 空 | 舞萌名牌、头像、边框 |
+
+**影响**：`/chu *` 全部指令可正常出图；`/mai b50` 等会因缺评级图报 `FileNotFoundError`。
+
+**补齐方式**：这些是游戏本体 UI 素材，上游仓库与落雪资源站都不提供。官方文档指向的 yuzuchan 网盘链接已失效（404）。需要从 [maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX) 项目的资源包或其他社区渠道获取 `Resource.7z`，解压后放入 `static/mai/`。
+
+资源体积较大（chu 约 16MB，mai 约 426MB），已全部加入 `.gitignore`，不入库。

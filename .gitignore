@@ -32,3 +32,6 @@ __pycache__/
 # 插件运行期自动下载/生成的静态文件，不入库
 /static/echarts.min.js
 /static/temp_pie.html
+
+# 中二节奏静态资源（约 16MB，游戏 UI 素材，按需自行获取）
+/static/chu/
