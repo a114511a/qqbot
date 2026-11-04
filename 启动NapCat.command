@@ -146,6 +146,14 @@ if ! _run_with_timeout 180 "$COMPOSE_BIN" --env-file "$PROJECT_DIR/.env" \
 fi
 
 printf '\nNapCat 已启动。WebUI： http://127.0.0.1:6099/webui\n'
-printf '使用 .env 中的 NAPCAT_WEBUI_TOKEN 登录 WebUI，然后扫码登录 QQ。\n'
-printf '以下为 NapCat 实时日志；按 Control-C 只会停止查看日志，不会停止容器。\n\n'
-"$COMPOSE_BIN" --env-file "$PROJECT_DIR/.env" -f "$PROJECT_DIR/compose.yaml" logs -f napcat
+printf '使用 .env 中的 NAPCAT_WEBUI_TOKEN 登录 WebUI，然后扫码登录 QQ。\n\n'
+
+# QQ 未登录时 NapCat 会持续打印登录态相关的 64 位十六进制串，
+# 数量远超正常日志（实测占全部日志约 76%），会把二维码提示彻底淹没。
+# 这里在输出侧过滤掉这类纯十六进制行，只保留人能看懂的日志。
+# 想查看完整原始日志：docker logs -f napcat
+printf '以下为 NapCat 实时日志（已过滤登录态十六进制噪声）。\n'
+printf '按 Control-C 只会停止查看日志，不会停止容器。\n'
+printf '需要看原始完整日志请执行：docker logs -f napcat\n\n'
+"$COMPOSE_BIN" --env-file "$PROJECT_DIR/.env" -f "$PROJECT_DIR/compose.yaml" logs -f --no-log-prefix napcat 2>&1 \
+  | grep --line-buffered -vE '^[0-9a-f]{32,128}$'
