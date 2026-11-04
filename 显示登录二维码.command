@@ -37,6 +37,21 @@ for candidate in \
 done
 [ -n "$DOCKER_BIN" ] || pause_and_exit 1 "没有找到 Docker CLI。请确认 Docker Desktop 已安装。"
 
+# 用独立的 docker-compose 可执行文件代替 `docker compose` 子命令：
+# 非交互环境下 `docker` 可能找不到 CLI 插件，导致 "unknown flag: --env-file"。
+COMPOSE_BIN=""
+for candidate in \
+  "/Applications/Docker.app/Contents/Resources/cli-plugins/docker-compose" \
+  "$HOME/.docker/cli-plugins/docker-compose" \
+  "/opt/homebrew/bin/docker-compose" \
+  "/usr/local/bin/docker-compose"; do
+  if [ -x "$candidate" ]; then
+    COMPOSE_BIN="$candidate"
+    break
+  fi
+done
+[ -n "$COMPOSE_BIN" ] || pause_and_exit 1 "没有找到 docker compose。请确认 Docker Desktop 已安装。"
+
 # 取容器内 qrcode.png 的修改时间（epoch 秒），顺便判断容器是否在跑。
 qr_age_seconds() {
   local mtime
@@ -86,7 +101,7 @@ case "$answer" in
 esac
 
 printf '\n正在重启 NapCat 容器……\n'
-"$DOCKER_BIN" compose "${COMPOSE_ARGS[@]}" restart napcat || pause_and_exit 1 "重启失败，请查看上方错误。"
+"$COMPOSE_BIN" "${COMPOSE_ARGS[@]}" restart napcat || pause_and_exit 1 "重启失败，请查看上方错误。"
 
 printf '等待二维码生成……\n'
 for _ in {1..40}; do
