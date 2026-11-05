@@ -16,6 +16,10 @@ FONT_DIR = CHU_DIR / "font"
 ICON_DIR = CHU_DIR / "icon"
 PLATE_DIR = CHU_DIR / "plate"
 TROPHY_DIR = CHU_DIR / "trophy"
+# 自定义成绩图背景。b30_bg.png 是本项目放进去的浅色主题背景；
+# 文件不存在时回退到内置的深色点阵背景。
+BG_DIR = CHU_DIR / "bg"
+B30_BG = BG_DIR / "b30_bg.png"
 
 # Fonts
 FONT_MAIN = FONT_DIR / "FOT-RodinNTLGPro-B.otf" if not config.scorelist_font_main else Path(config.scorelist_font_main)

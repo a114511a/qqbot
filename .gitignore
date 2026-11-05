@@ -35,3 +35,6 @@ __pycache__/
 
 # 中二节奏静态资源（约 16MB，游戏 UI 素材，按需自行获取）
 /static/chu/
+
+# VS Code 工作区配置
+/.vscode/

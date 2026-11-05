@@ -3,7 +3,7 @@ from typing import List
 from PIL import Image
 
 from ...score import PlayerChuInfo, PlayerChuScore
-from ._base import ScoreBaseImage
+from ._base import GAP_Y, ScoreBaseImage
 
 
 class DrawChuScores(ScoreBaseImage):
@@ -32,11 +32,25 @@ class DrawChuScores(ScoreBaseImage):
         :param page_size: 每个页码展示的成绩长度
         :return: 绘制后的图片
         """
+        # 按当前页实际成绩数动态计算高度，避免底部被切
+        import math as _math
+
+        page_scores = scores[(page - 1) * page_size : page * page_size]
+        rows = _math.ceil(len(page_scores) / self._col)
+        self.height = (
+            self.header_h
+            + self.section_gap
+            + self.section_height
+            + 4
+            + rows * (self._card_height + GAP_Y)
+            + self.footer_h
+            + self.section_gap
+        )
         self._reset_im()
 
         self._draw_header(player_info)
 
-        scores = scores[(page - 1) * page_size : page * page_size]
+        scores = page_scores
         y = self.header_h + self.section_gap
         y = self._draw_section(y, title, scores, page_size, (40, 185, 110))
 
