@@ -1,7 +1,7 @@
 """绑定与分析流程端到端测试（需要真实落雪令牌）。
 
 和 smoke_test.py 的区别：smoke_test 不联网、只验证插件能加载和指令能回复；
-本测试会真的调用落雪 API，验证「绑定 → 确认 → 出报告 → 解绑」整条链路。
+本测试会真的调用落雪 API，验证「绑定 → 出报告 → 解绑」整条链路。
 
 用法（在项目根目录执行）：
 
@@ -113,7 +113,6 @@ def clear_test_binding(user_id: str) -> None:
         return
     with sqlite3.connect(DATABASE_PATH) as conn:
         conn.execute("DELETE FROM bindings WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM pending_bindings WHERE user_id = ?", (user_id,))
 
 
 async def main() -> int:
@@ -157,36 +156,31 @@ async def main() -> int:
                 print("=== 1. 未绑定就查分析（应被拦下）===")
                 reply = await ask(ws, "/底力分析", 1)
                 print(" ", reply.strip()[:150])
-                assert "没有绑定" in reply or "先发送" in reply, "未绑定时未被拦下"
+                assert "没有绑定" in reply or "还没有绑定" in reply, "未绑定时未被拦下"
                 print("[OK]\n")
 
-                print(f"=== 2. /中二绑定 {FRIEND_CODE} ===")
-                reply = await ask(ws, f"/中二绑定 {FRIEND_CODE}", 2)
+                print(f"=== 2. /bind lxns {FRIEND_CODE} ===")
+                reply = await ask(ws, f"/bind lxns {FRIEND_CODE}", 2)
                 print(" ", reply.strip()[:200])
-                assert "查到落雪玩家" in reply, "未返回玩家资料"
-                assert "确认" in reply, "未提示确认"
+                assert "已成功绑定落雪查分器" in reply, "未返回绑定成功"
+                assert "好友码" in reply, "未返回好友码"
                 print("[OK]\n")
 
-                print("=== 3. /中二绑定状态（确认前应为未绑定）===")
-                reply = await ask(ws, "/中二绑定状态", 3)
-                print(" ", reply.strip()[:150])
-                assert "没有绑定" in reply, "确认前不应已绑定"
+                print("=== 3. /bind 查看绑定状态 ===")
+                reply = await ask(ws, "/bind", 3, count=2)
+                print(" ", reply.strip()[:200])
+                assert "查分器绑定情况" in reply, "未返回绑定状态"
+                assert "中二节奏: 已绑定" in reply, "绑定状态不正确"
                 print("[OK]\n")
 
-                print("=== 4. /中二绑定确认 ===")
-                reply = await ask(ws, "/中二绑定确认", 4)
-                print(" ", reply.strip()[:150])
-                assert "已绑定落雪玩家" in reply, "确认未生效"
-                print("[OK]\n")
-
-                print("=== 5. 数据库落库检查 ===")
+                print("=== 4. 数据库落库检查 ===")
                 row = binding_row(USER_ID)
                 print("  bindings 行：", row)
-                assert row is not None and row[0] == FRIEND_CODE, "绑定未写入数据库"
+                assert row is not None and row[0] == FRIEND_CODE, "绑定未写入共享库"
                 print("[OK]\n")
 
-                print("=== 6. /底力分析（先提示、后出图，共两条）===")
-                reply = await ask(ws, "/底力分析", 6, count=2)
+                print("=== 5. /底力分析（先提示、后出图，共两条）===")
+                reply = await ask(ws, "/底力分析", 5, count=2)
                 print(" ", reply.strip()[:250])
                 assert "正在读取" in reply, "未先发读取提示"
                 assert "Rating" in reply, "分析未返回报告文案"
@@ -194,11 +188,11 @@ async def main() -> int:
                 assert "报告生成或发送失败" not in reply, "成功出图后仍报了错"
                 print("[OK]\n")
 
-                print("=== 7. /中二解绑 ===")
-                reply = await ask(ws, "/中二解绑", 7)
+                print("=== 6. /unbind lxns ===")
+                reply = await ask(ws, "/unbind lxns", 6)
                 print(" ", reply.strip()[:150])
-                assert "已解绑" in reply, "解绑未生效"
-                assert binding_row(USER_ID) is None, "解绑后数据库仍有残留"
+                assert "已解绑查分器: lxns" in reply, "解绑未生效"
+                assert binding_row(USER_ID) is None, "解绑后共享库仍有残留"
                 print("[OK] 已清理测试绑定\n")
         finally:
             process.terminate()

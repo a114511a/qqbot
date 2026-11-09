@@ -1,3 +1,4 @@
+import json
 import random
 import re
 from asyncio import TimeoutError
@@ -17,16 +18,19 @@ from nonebot import get_driver, logger
 from nonebot.adapters import Event
 from nonebot.exception import FinishedException
 from nonebot.matcher import current_bot, current_event
+from nonebot.message import event_preprocessor
 from nonebot.params import Depends
 from nonebot_plugin_alconna import (
     AlconnaMatch,
     At,
     CommandMeta,
+    Extension,
     Match,
     Subcommand,
     UniMessage,
     on_alconna,
 )
+from nonebot_plugin_alconna.extension import OutputType
 from nonebot_plugin_alconna.uniseg import Image as UniImage
 from nonebot_plugin_orm import async_scoped_session
 from nonebot_plugin_session import (
@@ -37,7 +41,13 @@ from nonebot_plugin_session import (
 )
 
 from .config import config
-from .shared_binding import get_shared_friend_code, save_shared_friend_code
+from .shared_binding import (
+    delete_shared_binding,
+    get_shared_api_key,
+    get_shared_friend_code,
+    save_shared_api_key,
+    save_shared_friend_code,
+)
 from .constants import CHU_VERSION_MAP, MAI_VERSION_MAP
 from .database import (
     LocationSubscriptionORM,
@@ -95,7 +105,7 @@ from .score.maimai import (
     get_lxns_provider,
     get_maimaipy_provider,
 )
-from .score.maimai.providers.lxns import LXNSRatingTrend
+from .score.maimai.providers.lxns import LXNSParams, LXNSRatingTrend
 from .score.maimai.providers.maimai import MaimaiPyParams, maimai_client
 from .updater.songs import (
     update_chu_song_database,
@@ -327,18 +337,47 @@ BPM: {bpm}
 
 _DIFFICULTY_VALUE_MAP = {"BASIC": 0, "ADVANCED": 1, "EXPERT": 2, "MASTER": 3, "REMASTER": 4, "RE:MASTER": 4}
 
+_PARAM_UNMATCHED_PATTERN = re.compile(r"(参数\s*)([^\n]+?)(\s*匹配失败)")
+
+
+class _MaskSensitiveExtension(Extension):
+    """隐藏 Alconna 解析失败回复中回显的用户输入，避免泄露密钥等隐私。"""
+
+    @property
+    def id(self) -> str:
+        return "rikka-mask-sensitive"
+
+    @property
+    def priority(self) -> int:
+        return 1
+
+    async def output_converter(self, output_type: OutputType, content: str) -> UniMessage:
+        return UniMessage(_PARAM_UNMATCHED_PATTERN.sub(r"\1****\3", content))
+
+
 alconna_bind = on_alconna(
     Alconna(
         COMMAND_PREFIXES,
         "bind",
         Subcommand("help"),
-        Subcommand("lxns", Args["token", str], help_text="/bind lxns <落雪咖啡屋的个人 API 密钥> 绑定落雪咖啡屋查分器"),
+        Subcommand(
+            "lxns",
+            Args["friend_code", str],
+            help_text="/bind lxns <落雪好友码> 绑定落雪查分器",
+        ),
+        Subcommand(
+            "key",
+            Args["api_key", str],
+            help_text="/bind key <落雪个人 API 密钥> 绑定个人 API 密钥（自动绑定好友码）",
+        ),
         Subcommand("divingfish", help_text="/bind divingfish 绑定水鱼查分器"),
+        Args["api_key?", str],
         meta=CommandMeta("[查分器相关]绑定游戏账号/查分器"),
     ),
     priority=10,
     block=True,
     skip_for_unmatch=False,
+    extensions=[_MaskSensitiveExtension],
 )
 
 alconna_import = on_alconna(
@@ -673,28 +712,51 @@ alconna_chu = on_alconna(
     Alconna(
         COMMAND_PREFIXES,
         "chu",
-        Subcommand("b30", help_text="[中二节奏]生成玩家 Best 30"),
-        Subcommand("r50", help_text="[中二节奏]生成玩家 Recent 50"),
-        Subcommand("ap50", help_text="[中二节奏]生成玩家 ALL PERFECT 30", alias={"ap30", "aj50", "aj30"}),
+        Subcommand(
+            "b50",
+            Args["target?", At],
+            help_text="[中二节奏]生成玩家 Best 50，可用 @某人 查询他人",
+        ),
+        Subcommand(
+            "r50",
+            Args["target?", At],
+            help_text="[中二节奏]生成玩家 Recent 50，可用 @某人 查询他人",
+        ),
+        Subcommand(
+            "ap50",
+            Args["target?", At],
+            help_text="[中二节奏]生成玩家 ALL PERFECT 50，可用 @某人 查询他人",
+            alias={"aj50", "aj30"},
+        ),
         Subcommand(
             "minfo",
             Args["name", AllParam(str)],
-            help_text="[中二节奏]获取乐曲信息 /chu minfo <id|曲名>",
+            help_text="[中二节奏]获取乐曲信息 /chu minfo <id|曲名>（别名 /chu 查歌）",
+            alias={"查歌"},
         ),
-        Subcommand("random", help_text="[中二节奏]随机获取一首乐曲"),
+        Subcommand(
+            "random",
+            help_text="[中二节奏]随机获取一首乐曲（别名 /chu 随机）",
+            alias={"随机"},
+        ),
         Subcommand(
             "score",
             Args["name", AllParam(str)],
-            help_text="[中二节奏]获取单曲游玩情况 /chu score <id|曲名>",
+            help_text="[中二节奏]获取单曲游玩情况 /chu score <id|曲名> [@某人]",
         ),
         Subcommand(
             "scorelist",
             Args["arg", AllParam(str)],
-            help_text="[中二节奏]获取指定条件的成绩列表 /chu scorelist [level] [page]",
+            help_text="[中二节奏]获取指定条件的成绩列表 /chu scorelist [level] [page] [@某人]",
+        ),
+        Subcommand(
+            "plate",
+            Args["plate_id", int],
+            help_text="[中二节奏]设置成绩图名片底板 /chu plate <ID>，0 为纯色",
         ),
         meta=CommandMeta(
             "[中二节奏]中二节奏统一命令头",
-            usage="/chu <subcommand> [args]",
+            usage="/chu <subcommand> [args] [@某人]",
         ),
     ),
     priority=10,
@@ -708,54 +770,147 @@ async def handle_bind_lxns(
     db_session: async_scoped_session,
     mai_score_provider: LXNSScoreProvider = Depends(get_lxns_provider),
     chu_score_provider: LXNSChuScoreProvider = Depends(get_lxns_chu_provider),
-    token: Match[str] = AlconnaMatch("token"),
+    friend_code: Match[str] = AlconnaMatch("friend_code"),
 ):
     user_id = event.get_user_id()
 
-    if not token.available:
-        await _send_message(user_id, "请输入有效的落雪咖啡屋 API 密钥", finish=True)
+    if not friend_code.available:
+        await _send_message(user_id, "请输入落雪好友码，例如：/bind lxns 101045113067366", finish=True)
         return
 
-    lxns_token = token.result
+    raw = friend_code.result.strip()
+    if not raw.isdigit():
+        await _send_message(user_id, "好友码应为纯数字，请检查后重试。", finish=True)
+        return
+
     player_info = None
     chu_info = None
+    mai_ok = False
+    chu_ok = False
 
-    logger.debug("尝试验证玩家 API 密钥是否正确")
+    # 中二节奏：用好友码调开发者接口验证并写入绑定
     try:
-        player_info = await mai_score_provider.fetch_player_info_by_user_token(lxns_token)
-        await UserBindInfoORM.set_user_mai_friend_code(db_session, user_id, player_info.friend_code)  # type: ignore
-        await UserBindInfoORM.set_lxns_api_key(db_session, user_id, lxns_token)
-    except ClientResponseError as e:
-        logger.warning(f"玩家提供的 API 可能有误: {e.message}")
-
-    # 同时尝试获取中二节奏好友码
-    try:
-        chu_info = await chu_score_provider.fetch_player_info_by_user_token(lxns_token)
-        await UserBindInfoORM.set_user_chu_friend_code(db_session, user_id, str(chu_info.friend_code))
-        logger.debug(f"[{user_id}] 绑定时自动获取中二好友码: {chu_info.friend_code}")
+        chu_info = await chu_score_provider.fetch_player_info(
+            LXNSChuParams(friend_code=int(raw))
+        )
+        await UserBindInfoORM.set_user_chu_friend_code(db_session, user_id, raw)
+        chu_ok = True
+        logger.debug(f"[{user_id}] 已绑定中二好友码: {raw}")
     except Exception as e:
-        logger.debug(f"[{user_id}] 获取中二好友码失败: {e}")
+        logger.warning(f"[{user_id}] 中二好友码校验失败: {e}")
 
-    # 把落雪好友码写回「底力分析」插件的绑定库，让两个插件共享同一份绑定，
-    # 用户在 Rikka 这边绑过之后，底力分析那边也不用再绑（反之亦然）。
-    shared_code = None
-    if chu_info is not None:
-        shared_code = str(chu_info.friend_code)
-    elif player_info is not None:
-        shared_code = str(player_info.friend_code)
-    if shared_code:
-        player_name = ""
-        for info in (player_info, chu_info):
-            if info is not None and getattr(info, "name", None):
-                player_name = str(info.name)
-                break
-        save_shared_friend_code(user_id, shared_code, player_name)
+    # 舞萌：同一好友码通常通用，能查到就一并绑定
+    try:
+        player_info = await mai_score_provider.fetch_player_info(
+            LXNSParams(friend_code=raw)
+        )
+        await UserBindInfoORM.set_user_mai_friend_code(db_session, user_id, raw)
+        mai_ok = True
+        logger.debug(f"[{user_id}] 已绑定舞萌好友码: {raw}")
+    except Exception as e:
+        logger.debug(f"[{user_id}] 舞萌好友码校验失败（可能未游玩）: {e}")
 
-    if player_info or chu_info:
-        await _send_message(user_id, "已成功绑定落雪查分器⭐", finish=True)
+    if not (chu_ok or mai_ok):
+        await _send_message(
+            user_id,
+            f"未能在落雪查到好友码 {raw}，请确认好友码是否正确。\n"
+            "（好友码可在落雪查分器个人主页获取）",
+            finish=True,
+        )
+        return
 
-    await _send_message(user_id, "无法查询到有效的绑定信息，请检查 API Key 是否正确。", finish=True)
+    # 写回「底力分析」插件的共享绑定库，两边共用同一份好友码
+    player_name = ""
+    for info in (chu_info, player_info):
+        if info is not None and getattr(info, "name", None):
+            player_name = str(info.name)
+            break
+    save_shared_friend_code(user_id, raw, player_name)
+
+    games = []
+    if chu_ok:
+        games.append("中二节奏")
+    if mai_ok:
+        games.append("舞萌")
+    await _send_message(
+        user_id,
+        f"已成功绑定落雪查分器⭐\n好友码：{raw}\n已绑定：{' / '.join(games)}",
+        finish=True,
+    )
     return
+
+
+async def _bind_lxns_api_key(
+    event: Event,
+    db_session: async_scoped_session,
+    chu_score_provider: LXNSChuScoreProvider,
+    key: str,
+) -> None:
+    user_id = event.get_user_id()
+    key = key.strip()
+
+    # 先验证密钥有效，避免把错密钥写进库
+    try:
+        info = await chu_score_provider.fetch_player_info_by_user_token(key)
+    except Exception as e:
+        logger.warning(f"[{user_id}] 落雪个人 API 密钥校验失败: {e}")
+        await _send_message(user_id, "密钥校验失败，请检查后重试。", finish=True)
+        return
+
+    await UserBindInfoORM.set_lxns_api_key(db_session, user_id, key)
+
+    # 个人密钥的用户接口会返回好友码，顺手绑定，省去用户再发 /bind lxns。
+    # 已有好友码时保留原值，避免覆盖用户此前的绑定。
+    bind_info = await UserBindInfoORM.get_user_bind_info(db_session, user_id)
+    if not bind_info or not bind_info.chu_friend_code:
+        await UserBindInfoORM.set_user_chu_friend_code(db_session, user_id, str(info.friend_code))
+        friend_code_tip = f"已自动绑定中二好友码：{info.friend_code}\n"
+    else:
+        friend_code_tip = ""
+
+    # 同步给底力分析插件：好友码 + 个人密钥，让它也能用全部成绩进行分析。
+    effective_code = (
+        bind_info.chu_friend_code
+        if (bind_info and bind_info.chu_friend_code)
+        else str(info.friend_code)
+    )
+    save_shared_friend_code(user_id, str(effective_code), info.name)
+    save_shared_api_key(user_id, key)
+
+    await _send_message(
+        user_id,
+        f"已补充绑定落雪个人 API 密钥⭐\n玩家：{info.name}\n"
+        f"{friend_code_tip}"
+        "现在 AP50 / 成绩列表可以显示具体分数了，底力分析也会改用全部成绩。",
+        finish=True,
+    )
+
+
+@alconna_bind.assign("key")
+@catch_exception("绑定落雪个人 API 密钥时遇到错误")
+async def handle_bind_key(
+    event: Event,
+    db_session: async_scoped_session,
+    chu_score_provider: LXNSChuScoreProvider = Depends(get_lxns_chu_provider),
+    api_key: Match[str] = AlconnaMatch("api_key"),
+):
+    """补充绑定落雪个人 API 密钥。
+
+    好友码只能走开发者接口（B50 / R50 有分数，其余只有评级）。个人密钥走
+    用户接口，能拿到全部成绩的具体分数，供 AP50 / scorelist 显示。
+    """
+    user_id = event.get_user_id()
+
+    if not api_key.available or not api_key.result.strip():
+        await _send_message(
+            user_id,
+            "请输入落雪个人 API 密钥，例如：/bind key <密钥>\n"
+            "（可在落雪咖啡屋个人账号设置里获取）",
+            finish=True,
+        )
+        return
+
+    await _bind_lxns_api_key(event, db_session, chu_score_provider, api_key.result)
 
 
 @alconna_bind.assign("divingfish")
@@ -780,7 +935,8 @@ async def handle_bind_help(event: Event):
 
     help_text = (
         "查分器绑定帮助:\n"
-        "/bind lxns <落雪咖啡屋的个人 API 密钥> 绑定落雪咖啡屋查分器\n"
+        "/bind lxns <落雪好友码> 绑定落雪查分器\n"
+        "/bind key <落雪个人 API 密钥> 补充绑定（显示具体分数）\n"
         "/bind divingfish 绑定水鱼查分器\n"
     )
 
@@ -788,8 +944,19 @@ async def handle_bind_help(event: Event):
 
 
 @alconna_bind.assign("$main")
-async def handle_bind_main(event: Event, db_session: async_scoped_session):
+async def handle_bind_main(
+    event: Event,
+    db_session: async_scoped_session,
+    chu_score_provider: LXNSChuScoreProvider = Depends(get_lxns_chu_provider),
+    api_key: Match[str] = AlconnaMatch("api_key"),
+):
     user_id = event.get_user_id()
+
+    # 兼容 /bind <密钥> 的写法（漏写 key 子命令）
+    if api_key.available and api_key.result.strip():
+        await _bind_lxns_api_key(event, db_session, chu_score_provider, api_key.result)
+        return
+
     user_bind_info = await UserBindInfoORM.get_user_bind_info(db_session, user_id)
     lxns_binded = False
     divingfish_binded = False
@@ -928,7 +1095,7 @@ async def handle_import_lxns(
     # 检查是否绑定了落雪查分器
     bind_info = await UserBindInfoORM.get_user_bind_info(db_session, user_id)
     if not bind_info or not bind_info.lxns_api_key:
-        await _send_message(user_id, "未绑定落雪查分器，请使用 .bind lxns <API密钥> 命令绑定", finish=True)
+        await _send_message(user_id, "未绑定落雪个人 API 密钥，请使用 /bind key <密钥> 命令绑定", finish=True)
         return
     user_token = bind_info.lxns_api_key
 
@@ -1113,6 +1280,10 @@ async def handle_unbind(
         await _send_message(user_id, str(e), finish=True)
         return
 
+    # 解绑落雪时一并清掉底力分析的共享绑定，避免那边还能继续查询。
+    if provider.result in ("lxns", "all"):
+        delete_shared_binding(user_id)
+
     await _send_message(user_id, f"已解绑查分器: {provider.result}", finish=True)
 
 
@@ -1144,8 +1315,29 @@ async def handle_mai_b50(
     event: Event,
     db_session: async_scoped_session,
     score_provider: MaimaiPyScoreProvider = Depends(get_maimaipy_provider),
+    divingfish_provider: DivingFishScoreProvider = Depends(get_divingfish_provider),
 ):
+    """舞萌 Best50：默认水鱼 QQ 号直查，失败再回退原有 maimai.py 链路。"""
     user_id = event.get_user_id()
+
+    # ── 首选：水鱼 QQ 号直查（无需绑定、无需开发者密钥） ──
+    bind_info = await UserBindInfoORM.get_user_bind_info(db_session, user_id)
+    prefer_legacy = bool(bind_info and bind_info.default_provider == "lxns")
+    if not prefer_legacy and user_id.isdigit():
+        try:
+            df_params = DivingFishParams(user_id=user_id, qq=user_id)
+            logger.info(f"[{user_id}] 舞萌 B50 使用水鱼 QQ 直查")
+            player_info = await divingfish_provider.fetch_player_info(df_params)
+            player_b50 = await divingfish_provider.fetch_player_b50(df_params)
+            if player_b50.standard or player_b50.dx:
+                pic = await renderer.render_mai_player_best50(player_b50, player_info)
+                await _send_message(user_id, "", images=[pic], finish=True)
+                return
+            logger.info(f"[{user_id}] 水鱼返回空 B50，回退 maimai.py 链路")
+        except Exception as e:
+            logger.info(f"[{user_id}] 水鱼 QQ 直查失败({e})，回退 maimai.py 链路")
+
+    # ── 回退：原有 maimai.py 链路（落雪等 provider） ──
     provider = await MaimaiPyScoreProvider.auto_get_score_provider(db_session, user_id)
 
     logger.info(f"[{user_id}] 获取玩家 Best50, 查分器类型: {type(provider)}")
@@ -2300,6 +2492,48 @@ async def handle_rikka(db_session: async_scoped_session, event: Event):
 
 
 # --- 中二节奏 (CHUNITHM) handlers ---
+@event_preprocessor
+async def _normalize_chu_leading_at(event: Event) -> None:
+    """把「@某人 /chu ...」前面的 @ 去掉，让命令能被 Alconna 识别。
+
+    被 @ 的用户信息仍保留在 original_message 中，由 _get_at_target 读取。
+    """
+    # 只有消息事件才有 message 字段；心跳/通知等事件调用 get_message() 会抛
+    # NotImplementedError，不能作为判断依据。
+    message = getattr(event, "message", None)
+    if message is None:
+        return
+    if len(message) < 2 or message[0].type != "at":
+        return
+    index = 0
+    while index < len(message) and message[index].type == "at":
+        index += 1
+    if index >= len(message) or message[index].type != "text":
+        return
+    if not str(message[index]).lstrip().startswith("/chu"):
+        return
+    event.message = type(message)(list(message[index:]))
+
+
+def _get_at_target(event: Event) -> str | None:
+    """取消息里第一个 @ 的用户 QQ；忽略 @全体成员 和 @机器人自己。"""
+    try:
+        self_id = current_bot.get().self_id
+    except Exception:
+        self_id = getattr(event, "self_id", None)
+    # 前置 @ 会被 _normalize_chu_leading_at 从 message 里移除，需回看原始消息
+    message = getattr(event, "original_message", None)
+    if message is None:
+        message = event.get_message()
+    for seg in message:
+        if seg.type != "at":
+            continue
+        qq = str(seg.data.get("qq", ""))
+        if qq and qq != "all" and qq != str(self_id):
+            return qq
+    return None
+
+
 async def _get_chu_params(
     db_session: async_scoped_session, user_id: str, lxns_bind_required: bool = False
 ) -> LXNSChuParams:
@@ -2313,32 +2547,34 @@ async def _get_chu_params(
     :param lxns_bind_required: 使用个人 API 时强制要求绑定落雪查分器
     """
     bind_info = await UserBindInfoORM.get_user_bind_info(db_session, user_id)
+    # Rikka 自己的表里没密钥时，回退用底力分析插件共享的个人密钥。
+    user_key = (bind_info.lxns_api_key if bind_info else "") or get_shared_api_key(user_id) or ""
 
     # 优先复用「中二节奏底力分析」插件里已完成的绑定：用户在那边发过
-    # /中二绑定 好友码 之后，这里不必再绑一次（见 shared_binding.py）。
+    # /bind lxns <好友码> 之后，这里不必再绑一次（见 shared_binding.py）。
     shared_code = get_shared_friend_code(user_id)
     if shared_code:
-        if lxns_bind_required and not (bind_info and bind_info.lxns_api_key):
+        if lxns_bind_required and not user_key:
             # 个人 API 类功能仍需要个人密钥，但不再要求重新绑定好友码。
             logger.debug(f"[{user_id}] 命中底力分析共享绑定，但缺少个人 API 密钥")
             await _send_message(
                 user_id,
                 "你已在底力分析中绑定落雪，但该功能需要落雪个人 API 密钥。"
-                "请使用 /bind lxns <落雪查分器的成绩查询 API Key> 补充绑定喵~",
+                "请使用 /bind key <密钥> 补充绑定喵~",
                 finish=True,
             )
         logger.debug(f"[{user_id}] 复用底力分析插件的共享绑定: {shared_code}")
         return LXNSChuParams(
             friend_code=int(shared_code),
             qq=user_id,
-            user_key=bind_info.lxns_api_key if bind_info else None,
+            user_key=user_key or None,
         )
 
     if lxns_bind_required:
-        if (not bind_info) or (not bind_info.lxns_api_key):
+        if not user_key:
             await _send_message(
                 user_id,
-                "成绩的查询需要绑定落雪查分器哦, 请使用 /bind lxns <落雪查分器的成绩查询 API Key> 绑定喵~",
+                "成绩的查询需要落雪个人 API 密钥哦, 请使用 /bind key <密钥> 绑定喵~",
                 finish=True,
             )
 
@@ -2354,28 +2590,30 @@ async def _get_chu_params(
 
         await _send_message(
             user_id,
-            "成绩的查询需要绑定落雪查分器哦, 请使用 /bind lxns <落雪查分器的成绩查询 API Key> 绑定喵~",
+            "成绩的查询需要绑定落雪查分器哦, 请使用 /bind lxns <落雪好友码> 绑定喵~",
             finish=True,
         )
 
     assert bind_info and bind_info.chu_friend_code
-    return LXNSChuParams(friend_code=int(bind_info.chu_friend_code), qq=user_id, user_key=bind_info.lxns_api_key)
+    return LXNSChuParams(
+        friend_code=int(bind_info.chu_friend_code), qq=user_id, user_key=user_key or None
+    )
 
 
-@alconna_chu.assign("b30")
-@catch_exception("获取中二节奏 Best 30 失败")
-async def handle_chu_b30(
+@alconna_chu.assign("b50")
+@catch_exception("获取中二节奏 Best 50 失败")
+async def handle_chu_b50(
     event: Event,
     db_session: async_scoped_session,
     score_provider: LXNSChuScoreProvider = Depends(get_lxns_chu_provider),
 ):
-    user_id = event.get_user_id()
+    user_id = _get_at_target(event) or event.get_user_id()
 
-    logger.info(f"[{user_id}] [中二节奏] 获取玩家 Best 30")
+    logger.info(f"[{user_id}] [中二节奏] 获取玩家 Best 50")
     logger.debug(f"[{user_id}] 1/3 获得用户鉴权凭证...")
     params = await _get_chu_params(db_session, user_id)
 
-    logger.debug(f"[{user_id}] 2/3 发起 API 请求玩家 Best 30...")
+    logger.debug(f"[{user_id}] 2/3 发起 API 请求玩家 Best 50...")
     player_info = await score_provider.fetch_player_info(params)
     bests = await score_provider.fetch_player_bests(params)
 
@@ -2392,7 +2630,7 @@ async def handle_chu_r50(
     db_session: async_scoped_session,
     score_provider: LXNSChuScoreProvider = Depends(get_lxns_chu_provider),
 ):
-    user_id = event.get_user_id()
+    user_id = _get_at_target(event) or event.get_user_id()
 
     logger.info(f"[{user_id}] [中二节奏] 获取玩家 Recent 50")
     params = await _get_chu_params(db_session, user_id)
@@ -2410,34 +2648,160 @@ async def handle_chu_r50(
     await _send_message(user_id, "", images=[pic], finish=True)
 
 
+@alconna_chu.assign("plate")
+@catch_exception("设置名片底板失败")
+async def handle_chu_plate(
+    event: Event,
+    plate_id: Match[int] = AlconnaMatch("plate_id"),
+):
+    """设置成绩图使用的名牌底板（收藏品个性化）。
+
+    落雪开发者接口不返回玩家装备的 name_plate，所以由用户自己指定，
+    结果存到 data/chu_name_plates.json，重启后依然有效。
+    """
+    user_id = event.get_user_id()
+    if not plate_id.available:
+        await _send_message(
+            user_id,
+            "用法：/chu plate <ID>\n"
+            "可选 ID 见 static/chu/plate/，例如 /chu plate 8；"
+            "/chu plate 0 使用纯色底板。",
+            finish=True,
+        )
+        return
+    pid = int(plate_id.result)
+    plate_path = Path(config.static_resource_path) / "chu" / "plate" / f"{pid}.png"
+    if pid != 0 and not plate_path.exists():
+        available = sorted(
+            int(p.stem) for p in plate_path.parent.glob("*.png") if p.stem.isdigit()
+        )
+        await _send_message(
+            user_id,
+            f"没有找到 ID 为 {pid} 的名牌底板。\n可用 ID：{available}",
+            finish=True,
+        )
+        return
+
+    plate_file = Path("data") / "chu_name_plates.json"
+    try:
+        saved: dict[str, int] = (
+            json.loads(plate_file.read_text(encoding="utf-8")) if plate_file.exists() else {}
+        )
+    except Exception:
+        saved = {}
+    saved[str(user_id)] = pid
+    plate_file.parent.mkdir(parents=True, exist_ok=True)
+    plate_file.write_text(json.dumps(saved, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 同步到进程内配置，立即生效
+    config.chu_name_plate_by_user = {**config.chu_name_plate_by_user, str(user_id): pid}
+
+    msg = f"已把你的成绩图名片底板设为 {pid}。"
+    if pid == 0:
+        msg += "（纯色底板）"
+    await _send_message(user_id, msg, finish=True)
+
+
 @alconna_chu.assign("ap50")
 @catch_exception("获取中二节奏 AP 50 失败")
-async def handle_chu_ap30(
+async def handle_chu_ap50(
     event: Event,
     db_session: async_scoped_session,
     score_provider: LXNSChuScoreProvider = Depends(get_lxns_chu_provider),
 ):
-    user_id = event.get_user_id()
+    user_id = _get_at_target(event) or event.get_user_id()
 
     logger.info(f"[{user_id}] [中二节奏] 获取玩家 AP 50")
     params = await _get_chu_params(db_session, user_id)
 
     player_info = await score_provider.fetch_player_info(params)
-    bests = await score_provider.fetch_player_bests(params)
 
     from .score.chunithm._schema import ChuFullComboType
 
-    ap_scores: list[PlayerChuScore] = []
-    for s in bests.bests + bests.selections + bests.new_bests:
-        if s.full_combo in (ChuFullComboType.AJ, ChuFullComboType.AJC):
-            ap_scores.append(s)
+    # ── 阶段一：从「玩家全部成绩」里筛出 full_combo 为 AJ / AJC 的曲目 ──
+    # /scores 返回玩家所有游玩过的谱面（含低难度），是 AJ 唯一可靠的来源。
+    # 注意它只有评级、没有分数，分数要靠阶段二补。
+    try:
+        all_scores = await score_provider.fetch_player_scores(
+            params, use_user_api=bool(params.user_key)
+        )
+    except Exception as e:
+        logger.warning(f"[{user_id}] 全成绩接口不可用: {e}")
+        all_scores = []
 
-    ap_scores.sort(key=lambda x: x.rating, reverse=True)
+    ap_scores: list[PlayerChuScore] = [
+        s for s in all_scores
+        if s.full_combo in (ChuFullComboType.AJ, ChuFullComboType.AJC)
+    ]
 
+    # 兜底：全成绩接口拿不到时（如未绑定且接口异常），退回用 /bests 的 60 首筛
+    if not ap_scores:
+        logger.info(f"[{user_id}] 全成绩无结果，回退 /bests 筛选")
+        bests = await score_provider.fetch_player_bests(params)
+        best_scores = bests.bests + bests.selections + bests.new_bests
+        ap_scores = [
+            s for s in best_scores
+            if s.full_combo in (ChuFullComboType.AJ, ChuFullComboType.AJC)
+        ]
+    else:
+        best_scores = []
+
+    # ── 阶段二：用「获取 B50 的方式」补齐这些曲目的具体成绩 ──
+    # /bests 与 /recents 返回的条目带 score / rating / over_power，
+    # 按 (曲目, 难度) 建索引，命中就用带分数的版本覆盖到 AJ 曲目上。
+    # 已绑定个人密钥时 /scores 本身就带分数，无需补分。
+    if ap_scores and any(s.score == 0 for s in ap_scores):
+        score_lookup: dict[tuple[int, int], PlayerChuScore] = {}
+        try:
+            if not best_scores:
+                bests = await score_provider.fetch_player_bests(params)
+                best_scores = bests.bests + bests.selections + bests.new_bests
+            for s in best_scores:
+                score_lookup[(s.song_id, int(s.song_difficulty.value))] = s
+        except Exception as e:
+            logger.warning(f"[{user_id}] 获取 B50 补分失败: {e}")
+
+        try:
+            recents = await score_provider.fetch_player_recents(params)
+            for s in recents:
+                if s.score > 0:
+                    score_lookup[(s.song_id, int(s.song_difficulty.value))] = s
+        except Exception as e:
+            logger.warning(f"[{user_id}] 获取 Recent 50 补分失败: {e}")
+
+        for s in ap_scores:
+            full = score_lookup.get((s.song_id, int(s.song_difficulty.value)))
+            if full is not None and full.score > 0:
+                # 保留原成绩的 AJ/AJC 标记，只覆盖数值与曲目信息
+                s.score = full.score
+                s.rating = full.rating
+                s.over_power = full.over_power
+                s.song_name = full.song_name
+                s.song_level = full.song_level
+
+    ap_scores.sort(key=lambda x: (x.rating, x.score), reverse=True)
+    logger.info(f"[{user_id}] 筛出 {len(ap_scores)} 首 AJ 成绩")
+
+    if not ap_scores:
+        await _send_message(user_id, "暂无 ALL JUSTICE 成绩", finish=True)
+        return
+
+    # 正常生成图片：即使部分/全部曲目缺分数也照常出图，不提前拦截。
     logger.debug(f"[{user_id}] 渲染玩家数据...")
     pic = await chu_renderer.render_chu_player_scores(ap_scores, player_info, title="AP 50 列表")
 
-    await _send_message(user_id, "", images=[pic], finish=True)
+    # 图片之后追加提示：拿不到具体分数时，告诉用户怎么补绑。
+    no_score = sum(1 for s in ap_scores if not s.score)
+    if no_score:
+        # 第一段只发图（不 finish），第二段发提示后结束
+        await _send_message(user_id, "", images=[pic])
+        await _send_message(
+            user_id,
+            f"其中 {no_score} 首曲目未显示具体分数（落雪好友码接口不返回低难度谱面分数）。\n"
+            "如需显示分数，请发送 /bind key <落雪个人 API 密钥> 补充绑定。",
+            finish=True,
+        )
+    else:
+        await _send_message(user_id, "", images=[pic], finish=True)
 
 
 @alconna_chu.assign("minfo")
@@ -2499,12 +2863,12 @@ async def handle_chu_score(
     name: Match[UniMessage] = AlconnaMatch("name"),
     score_provider: LXNSChuScoreProvider = Depends(get_lxns_chu_provider),
 ):
-    user_id = event.get_user_id()
+    user_id = _get_at_target(event) or event.get_user_id()
 
     if not name.available:
         await _send_message(user_id, "请输入有效的乐曲ID/名称/别名！", finish=True)
 
-    raw_query = name.result.extract_plain_text()
+    raw_query = name.result.extract_plain_text().strip()
     logger.info(f"[{user_id}] 查询单曲游玩情况, 查询内容: {raw_query}")
 
     logger.debug(f"[{user_id}] 1/4 通过乐曲ID/别名查询乐曲信息...")
@@ -2540,7 +2904,7 @@ async def handle_chu_scorelist(
     arg: Match[UniMessage] = AlconnaMatch("arg"),
     score_provider: LXNSChuScoreProvider = Depends(get_lxns_chu_provider),
 ):
-    user_id = event.get_user_id()
+    user_id = _get_at_target(event) or event.get_user_id()
 
     if not arg.available or not arg.result:
         await _send_message(
@@ -2636,6 +3000,9 @@ async def handle_chu_scorelist(
     if not filtered_scores:
         await _send_message(user_id, "呜呜，未找到符合条件的游玩记录喵", finish=True)
         return
+
+    # 严格按实际打出的分数从高到低排序（同分时按 rating 降序）
+    filtered_scores.sort(key=lambda s: (s.score, s.rating), reverse=True)
 
     page_size = 50
     total_pages = (len(filtered_scores) + page_size - 1) // page_size

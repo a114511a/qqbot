@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import json
+
 from nonebot import logger, require
 
 require("nonebot_plugin_alconna")
@@ -53,6 +55,23 @@ async def check_static_resource():
         logger.warning(
             "[静态资源] 未找到 ResourceHanRoundedCN-Bold.ttf，成绩图将回退到系统字体。"
         )
+
+
+@get_driver().on_startup
+async def load_chu_name_plates():
+    """把用户保存的名牌底板选择加载进配置（/chu plate 的持久化部分）。"""
+    plate_file = Path("data") / "chu_name_plates.json"
+    if not plate_file.exists():
+        return
+    try:
+        saved = json.loads(plate_file.read_text(encoding="utf-8"))
+        config.chu_name_plate_by_user = {
+            **(config.chu_name_plate_by_user or {}),
+            **{str(k): int(v) for k, v in saved.items()},
+        }
+        logger.debug(f"已加载 {len(saved)} 条名牌底板设置")
+    except Exception as e:
+        logger.warning(f"读取名牌底板设置失败: {e}")
 
 
 @get_driver().on_startup

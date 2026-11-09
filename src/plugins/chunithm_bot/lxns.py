@@ -114,19 +114,36 @@ def _unwrap(payload: Any) -> Any:
     return payload
 
 
-def _translate_http_error(status_code: int, response: httpx.Response) -> AnalysisError:
+USER_API_BASE = f"{LXNS_BASE_URL}/user/chunithm/player"
+
+
+def _translate_http_error(
+    status_code: int, response: httpx.Response, *, user_token: bool = False
+) -> AnalysisError:
     """把落雪的各种错误码翻译成面向用户、指明排查方向的异常。
 
     401 / 403 / 404 / 429 / 5xx / 400 分别对应完全不同的原因，
     混成一句「查询失败」会让用户在错误的方向上乱试。
+    ``user_token=True`` 表示这次用的是玩家个人 API 密钥（X-User-Token），
+    提示文案要指向查分插件的 /bind key，而不是 .env 里的开发者密钥。
     """
     # 401 和 403 是两种完全不同的故障，分开提示。
     if status_code == 401:
+        if user_token:
+            return AnalysisError(
+                "落雪个人 API 密钥无效或已失效（HTTP 401）。请在落雪账号详情里重新生成，"
+                "再发送 /bind key <密钥> 重新绑定。"
+            )
         return AnalysisError(
             f"落雪 API 认证失败（HTTP 401）。请检查 .env 中的 {TOKEN_ENV_NAME}："
             "必须是落雪开发者面板里的「开发者 API 密钥」，且要原样填写、不要带 Bearer 前缀。"
         )
     if status_code == 403:
+        if user_token:
+            return AnalysisError(
+                "落雪个人 API 密钥权限不足（HTTP 403）。请确认密钥属于本人账号且没有被撤销，"
+                "必要时重新生成后再绑定。"
+            )
         return AnalysisError(
             "落雪 API 权限不足（HTTP 403）。开发者密钥本身有效，但缺少读取权限："
             "玩家资料需要 allow_third_party_fetch_player，成绩需要 allow_third_party_fetch_scores。"
@@ -168,6 +185,7 @@ def _request(
     url: str,
     *,
     token: str = "",
+    user_token: str = "",
     params: dict[str, Any] | None = None,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> "_SyncResponse":
@@ -176,7 +194,7 @@ def _request(
     这样做是因为 httpx 的同步客户端不能放进异步函数，而测试又想替换发送层；
     把「怎么发」和「发什么」拆开，替换/打桩都只改一处。
     """
-    return _SyncResponse(url=url, token=token, params=params, timeout=timeout)
+    return _SyncResponse(url=url, token=token, user_token=user_token, params=params, timeout=timeout)
 
 
 class _SyncResponse:
@@ -186,27 +204,33 @@ class _SyncResponse:
     真正发送逻辑在 ``_send``，调用方不需要接触这个类型。
     """
 
-    __slots__ = ("url", "token", "params", "timeout")
+    __slots__ = ("url", "token", "user_token", "params", "timeout")
 
     def __init__(
         self,
         *,
         url: str,
         token: str,
+        user_token: str,
         params: dict[str, Any] | None,
         timeout: float,
     ) -> None:
         self.url = url
         self.token = token
+        self.user_token = user_token
         self.params = params
         self.timeout = timeout
 
 
 async def _send(request: "_SyncResponse") -> Any:
     """发送请求并返回拆掉信封后的 JSON；所有失败翻译成 AnalysisError。"""
-    # 落雪（LXNS）的鉴权要求令牌直接放进 Authorization，不能加 "Bearer " 前缀。
-    # 加了前缀会被判为 401 unauthorized（实测：带前缀 401，不带前缀鉴权通过）。
-    headers = {"Authorization": request.token} if request.token else {}
+    # 两种鉴权不能混用：
+    # - 开发者密钥放 Authorization（不能加 Bearer 前缀，实测加了会 401）
+    # - 玩家个人密钥放 X-User-Token
+    if request.user_token:
+        headers = {"X-User-Token": request.user_token}
+    else:
+        headers = {"Authorization": request.token} if request.token else {}
     try:
         client = httpx.AsyncClient(timeout=request.timeout, follow_redirects=True)
     except (httpx.InvalidURL, ValueError) as exc:
@@ -224,7 +248,9 @@ async def _send(request: "_SyncResponse") -> Any:
     except httpx.HTTPError as exc:
         raise AnalysisError("暂时无法连接查询服务，请检查网络后重试。") from exc
     if response.is_error:
-        raise _translate_http_error(response.status_code, response)
+        raise _translate_http_error(
+            response.status_code, response, user_token=bool(request.user_token)
+        )
     try:
         return _unwrap(response.json())
     except ValueError as exc:
@@ -283,6 +309,29 @@ async def fetch_player_by_qq(qq: str) -> dict[str, Any]:
     if not isinstance(result, dict):
         raise AnalysisError("落雪没有返回与当前 QQ 账号关联的中二节奏资料。")
     return result
+
+
+async def fetch_user_player(api_key: str) -> dict[str, Any]:
+    """用玩家个人 API 密钥读取自己的玩家资料。
+
+    个人密钥走 ``X-User-Token``，只能查密钥所属账号；返回结构与开发者接口一致，
+    并额外保证带有 ``friend_code``，绑定流程据此自动补全好友码。
+    """
+    result = await _send(
+        _request(f"{USER_API_BASE}", user_token=api_key, timeout=PLAYER_TIMEOUT)
+    )
+    if not isinstance(result, dict):
+        raise AnalysisError("落雪返回的玩家资料格式不正确。")
+    return result
+
+
+async def fetch_user_scores(api_key: str) -> Any:
+    """用玩家个人 API 密钥读取**全部**成绩（每张谱面都带具体分数）。
+
+    开发者接口的 /scores 只有评级、没有分数，个人密钥接口才能拿到完整分数，
+    所以绑了密钥时底力分析优先用它。
+    """
+    return await _send(_request(f"{USER_API_BASE}/scores", user_token=api_key))
 
 
 async def fetch_bests(friend_code: str) -> Any:

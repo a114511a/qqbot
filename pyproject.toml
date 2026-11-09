@@ -21,11 +21,17 @@ dependencies = [
     "nonebot-plugin-apscheduler>=0.5.0",
     "nonebot-plugin-localstore>=0.7.4",
     "aiosqlite>=0.22.1",
+    "pypinyin>=0.55.0",
+    "soundfile>=0.14.0",
 ]
 
 [tool.nonebot]
 adapter = ["nonebot.adapters.onebot.v11"]
 plugin_dirs = ["src/plugins"]
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
 
 [dependency-groups]
 dev = [

@@ -76,6 +76,9 @@ class DivingFishRecord(TypedDict):
 @dataclass
 class DivingFishParams:
     user_id: str
+    # 水鱼 query/player 支持直接用 QQ 号查，本项目绑定主键就是 QQ 号，
+    # 因此优先用它，避免依赖 OAuth 授权流程。
+    qq: Optional[str] = None
 
 
 class DivingFishScoreProvider(BaseScoreProvider[DivingFishParams]):
@@ -210,33 +213,61 @@ class DivingFishScoreProvider(BaseScoreProvider[DivingFishParams]):
 
         return PlayerMaiScore(**filtered)
 
+    async def _query_player_b50(
+        self, params: DivingFishParams, endpoint: str = "query/player"
+    ) -> DivingFishBest50Response:
+        """查询玩家 B50。
+
+        水鱼 ``query/player`` 需要 body 里带 ``username`` 或 ``qq``，
+        光有 OAuth token 是查不到的（旧实现漏传 body，导致永远返回
+        "user not exists"）。这里优先用 QQ 号直查——本项目的绑定主键就是
+        QQ 号，无需额外账号；QQ 号查不到时再退回 OAuth 用户名。
+        """
+        qq = (params.qq or params.user_id or "").strip()
+        if qq.isdigit():
+            try:
+                return await self._post_resp(endpoint, params={"qq": qq})
+            except Exception:
+                logger.debug(f"[水鱼] QQ {qq} 直查失败，尝试 OAuth 方式")
+
+        access_token = await self.access_token(params.user_id)
+        return await self._post_resp(endpoint, auth_token=access_token)
+
     async def fetch_player_info(self, params: DivingFishParams) -> PlayerMaiInfo:
         """
         获取玩家信息(水鱼不支持获取收藏品信息)
         """
         endpoint = "oauth/userinfo"
-        access_token = await self.access_token(params.user_id)
+        try:
+            data: DivingFishBest50Response = await self._query_player_b50(
+                params, endpoint="query/player"
+            )
+        except Exception:
+            access_token = await self.access_token(params.user_id)
+            data = await self._post_resp(endpoint, auth_token=access_token)
 
-        data: DivingFishBest50Response = await self._post_resp(endpoint, auth_token=access_token)
-        return PlayerMaiInfo(data["nickname"], data["rating"], 0, 0)
+        return PlayerMaiInfo(
+            data.get("nickname") or data.get("username") or "",
+            int(data.get("rating", 0)),
+            0,
+            0,
+        )
 
     async def fetch_player_b50(self, params: DivingFishParams) -> PlayerMaiB50:
         """
         获得玩家 Best50 信息
         """
-        endpoint = "query/player"
-        access_token = await self.access_token(params.user_id)
-
-        data: DivingFishBest50Response = await self._post_resp(endpoint, auth_token=access_token)
+        data = await self._query_player_b50(params)
 
         standard_scores = []
         dx_scores = []
 
-        for raw_score in data["charts"]["sd"]:
+        charts = data.get("charts") or {}
+        for raw_score in charts.get("sd", []):
             score = self._score_unpack(raw_score)
             standard_scores.append(score)
 
-        for raw_score in data["charts"]["dx"]:
+        for raw_score in charts.get("dx", []):
             score = self._score_unpack(raw_score)
             dx_scores.append(score)
 
@@ -246,6 +277,10 @@ class DivingFishScoreProvider(BaseScoreProvider[DivingFishParams]):
     async def fetch_player_records(self, params: DivingFishParams) -> DivingFishPlayerRecordsResponse:
         """
         获取玩家完整游玩记录
+
+        注意：水鱼的 ``player/records`` 只认 OAuth token，**不支持 QQ 号直查**
+        （实测 ``?qq=`` 返回「尚未登录」）。B50 走的 ``query/player`` 才支持 QQ。
+        所以这里仍需要走 OAuth 授权；未授权时抛出 N/A，由上层回退落雪。
         """
         endpoint = "player/records"
         access_token = await self.access_token(params.user_id)

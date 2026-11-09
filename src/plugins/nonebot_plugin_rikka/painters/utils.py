@@ -7,6 +7,10 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from ..score.maimai import PlayerMaiScore
 from .maimai._config import PIC_DIR
 
+# 单张图片的体积上限（字节）。NapCat 富媒体通道限速 256KB/s、基础超时 10s，
+# 超过约 2MB 就容易报 rich media transfer failed，这里留足余量卡在 1.2MB。
+_MAX_IMAGE_BYTES = 1200 * 1024
+
 
 def get_char_width(o: int) -> int:
     """
@@ -118,13 +122,47 @@ def image_to_bytes(img: Image.Image, format="PNG") -> bytes:
     """
     将 PIL Image 对象转换为字节流
 
+    发送端（NapCat）对图片走富媒体通道，体积过大会直接报
+    ``rich media transfer failed``。成绩图背景是插画、噪点多，原样存 PNG
+    动辄 2MB+，很容易触发失败。
+
+    这里在保持画质的前提下做体积自适应：
+    1. 先按原格式存，若不超过 ``_MAX_IMAGE_BYTES`` 直接用；
+    2. 超了就转 256 色调色板 PNG（成绩图是 UI 风格、颜色有限，肉眼几乎无损），
+       体积通常能压到 1/5 左右；
+    3. 还不够才退回 JPEG（有损，只在极端情况下用）。
+
     :param img: PIL Image 对象
     :param format: 图片格式，默认为 PNG
     :return: 图片字节流
     """
-    output_buffer = BytesIO()
-    img.save(output_buffer, format)
-    return output_buffer.getvalue()
+    buffer = BytesIO()
+    img.save(buffer, format)
+    data = buffer.getvalue()
+    if len(data) <= _MAX_IMAGE_BYTES:
+        return data
+
+    # 调色板 PNG：去掉 alpha（QQ 会补白底），颜色量化到 256 色
+    try:
+        base = img.convert("RGB") if img.mode != "RGB" else img
+        quantized = base.quantize(colors=256, method=Image.Quantize.MAXCOVERAGE)
+        buffer = BytesIO()
+        quantized.save(buffer, "PNG", optimize=True)
+        data = buffer.getvalue()
+        if len(data) <= _MAX_IMAGE_BYTES:
+            return data
+    except Exception:  # 量化失败就继续往下降级，不要让发图直接失败
+        pass
+
+    # 兜底：JPEG（文字边缘会略糊，但至少能发出去）
+    base = img.convert("RGB")
+    for quality in (92, 88, 85, 80, 75):
+        buffer = BytesIO()
+        base.save(buffer, "JPEG", quality=quality, subsampling=0)
+        data = buffer.getvalue()
+        if len(data) <= _MAX_IMAGE_BYTES:
+            return data
+    return data
 
 
 def rounded_corners(

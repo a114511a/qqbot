@@ -70,13 +70,59 @@ src/plugins/
 │   ├── __init__.py        插件入口：元信息 + 子模块加载
 │   ├── lxns.py            落雪 API 客户端：URL、鉴权、错误翻译、曲目缓存
 │   ├── analysis.py        数据层：绑定库、统计、AI 简报、报告渲染
-│   └── commands.py        指令层：/中二绑定系列、/底力分析
+│   └── commands.py        指令层：/底力分析
 ├── nonebot_plugin_rikka/  舞萌/中二查分插件（已按本项目改造，见下）
-├── help.py                /help 三层索引帮助
+├── ottohzys/              otto 活字印刷（自包含移植，见下）
+├── group_events/          欢迎新成员 + 戳一戳（自包含）
+├── mai_arcade/            机厅人数记录（自包含）
+├── help.py                /help 四类索引帮助
 └── hello.py               /hello 连通性测试
 ```
 
 依赖方向单向：`commands → analysis → lxns`。要给机器人加新的落雪能力（查趋势、查单曲排名等），在 `lxns.py` 里加一个 `async def fetch_xxx()` 即可，URL、鉴权和错误翻译都复用现成的基础层；分析逻辑再在 `analysis.py` 里组合。
+
+### 群功能（从旧 bot 移植）
+
+这三个插件移植自旧 bot 项目（`neko-bot.zip`）。原实现都依赖 Windows 专用轮子、
+GPLv3 插件或带一堆硬编码群号，本项目**按原命令与文案重新实现**，保持使用习惯不变。
+
+| 功能 | 本项目实现 | 原实现 | 说明 |
+| --- | --- | --- | --- |
+| otto 活字印刷 | `ottohzys/` | `nonebot-plugin-ottohzys` 0.2.1 | 保留 9 个命令别名与全部参数；去掉 GPLv3 的 `psola`，变速变调改用 numpy 重采样 |
+| 欢迎新成员 | `group_events/` | `nonebot-plugin-eventmonitor` 0.2.1 | 原插件 GPLv3 且捆绑 5 个无关功能 |
+| 戳一戳 | `group_events/` | 同上 | 文案重写，去掉擦边内容；CD 改为真正生效 |
+| 机厅人数 | `mai_arcade/` | `nonebot-plugin-mai-arcade` 0.1.5.7.5 | 保留 `<机厅名>++/--/+N/=N/几`、`mai` 等触发格式 |
+
+移植时修掉的原版问题：
+
+- otto：`-N/--no-normalize` 默认值写成 `True` 导致归一化永远不生效；资源路径依赖 `Path.cwd()`
+- 机厅：`<机厅名>--` 是 `num.pop()` 语义错乱（改成真正的 −1）；每日清零只改内存不落盘；
+  十几个 handler 误用 `go_on.finish()`；人数正则过宽会吞掉所有以数字结尾的消息
+- 戳一戳：原版 CD 到点后仍然回复（等于没限流）
+- 欢迎：原版 `config_check()` 有 `KeyError`，启动即 `get_group_list()` 可能报错
+
+**数据迁移**：迁移脚本只搬运运行时数据，代码不复制。
+
+```bash
+./.venv/bin/python tools/migrate_from_neko_bot.py /path/to/neko-bot.zip
+```
+
+- otto 音频（`tokens/*.wav` 367 个 + `ysddTokens/*.mp3` 21 个 ≈ 12MB）→ `data/ottohzys/`
+- 群功能开关（64 个群的欢迎/戳一戳列表）→ 打印成 `.env` 片段
+- 机厅人数**没有历史数据**可迁移（原版存在 Windows AppData，不在压缩包里）
+
+`data/` 与 `.env` 都在 `.gitignore` 里，迁移出来的数据不会推到 GitHub。
+
+群功能配置（`.env`）：
+
+```bash
+WELCOME_ENABLED=true
+WELCOME_GROUPS=[]      # 留空 = 所有群；填群号则只在这些群生效
+POKE_ENABLED=true
+POKE_GROUPS=[]
+POKE_CD=2              # 每人戳一戳冷却秒数，0 = 不限
+ARCADE_GROUPS=[]
+```
 
 ### 查分插件（Rikka，已改造）
 
@@ -105,10 +151,8 @@ uv run nb orm upgrade
 
 群聊和私聊都可以使用，绑定按发送者 QQ 区分：
 
-- `/中二绑定 好友码`：按好友码查询落雪玩家资料并展示确认信息；在 10 分钟内发送 `/中二绑定确认` 完成绑定。只认好友码，不做 QQ 关联核对——落雪不保证登记了用户的 QQ，硬核对会把没绑 QQ 的玩家直接挡在门外。
-- `/中二绑定状态`：查询绑定状态。
-- `/中二解绑`：删除自己的绑定。
-- `/底力分析`：读取 Best / Selection / New / Recent 成绩，生成仿照示例布局的分析图片，含能力倾向统计、难度标签统计、配置标签统计和锐评总结。别名 `/中二底力分析`、`/chunithm底力分析`。
+- 落雪绑定统一使用查分插件的 `/bind lxns <好友码>` 或 `/bind key <个人密钥>`（自动绑定好友码），两个插件共用同一份绑定；`/unbind lxns` 会同时解除底力分析的绑定。
+- `/底力分析`：读取 Best / Selection / New / Recent 成绩，生成仿照示例布局的分析图片，含能力倾向统计、难度标签统计、配置标签统计和锐评总结。绑定个人密钥后改用个人接口的**全部成绩**分析。别名 `/中二底力分析`、`/chunithm底力分析`。
 
 群聊里好友码和成绩报告对同群成员可见，`/help` 中已提示，介意时请私聊查询。
 
@@ -229,20 +273,61 @@ TEST_FRIEND_CODE=你的好友码 ./.venv/bin/python tests/binding_flow_test.py
 
 ### 静态资源补充说明（2026-11）
 
-`/chu b30` 等成绩图渲染依赖游戏 UI 素材。**中二节奏资源已补齐**，mai（舞萌）资源部分缺失：
+`/chu b50` 等成绩图渲染依赖游戏 UI 素材。**中二节奏资源可一键补齐**，mai（舞萌）资源部分缺失：
 
 | 资源 | 状态 | 说明 |
 | --- | --- | --- |
-| `static/chu/pic`（143） | ✅ 完整 | 评级图标、徽章、背景、logo |
-| `static/chu/plate`（1） | ✅ 完整 | 名牌底图 |
+| `static/chu/pic`（171） | ✅ 完整 | 评级图标、徽章、背景、logo，含 16+/17+ 渐变数字 |
+| `static/chu/plate`（41） | ✅ 完整 | 名牌底板（收藏品） |
+| `static/chu/cover`（1466） | ✅ 完整 | 全部曲目曲绘，含 WORLDS_END 复用原曲封面 |
 | `static/chu/icon`（2） | ✅ 完整 | 角色头像 |
 | `static/chu/font`（2） | ✅ 完整 | FOT-RodinNTLGPro B/EB |
 | `static/mai/cover`（1682） | ✅ 完整 | 曲绘 |
 | `static/mai/pic`（233） | ⚠️ 缺 16 个 | 缺 `UI_CMN_DXRating_*.png`（评级图）、`b50_bg.png`、`ra.png`、`ra-dx.png`、`fcfs_score.png`、`UI_DNM_DaniPlate_24.png` |
 | `static/mai/plate` / `icon` / `frame` | ❌ 空 | 舞萌名牌、头像、边框 |
 
+**中二资源一键补齐**（需先执行 `/update songs` 初始化曲目库）：
+
+```bash
+./.venv/bin/python tools/download_chu_assets.py   # 曲绘 + 名牌 + 渐变数字
+```
+
+脚本只写 `static/chu/`，可重复运行（已有文件跳过）。曲绘来自 `assets2.lxns.net` 直连，
+不再走 Playwright challenge；8000~8999 的 WORLDS_END 曲目自动映射到 `id-8000` 的原曲封面。
+
+**舞萌补齐方式**：这些是游戏本体 UI 素材，上游仓库与落雪资源站都不提供。官方文档指向的
+yuzuchan 网盘链接已失效（404）。需要从 [maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX)
+项目的资源包或其他社区渠道获取 `Resource.7z`，解压后放入 `static/mai/`。
+
 **影响**：`/chu *` 全部指令可正常出图；`/mai b50` 等会因缺评级图报 `FileNotFoundError`。
 
-**补齐方式**：这些是游戏本体 UI 素材，上游仓库与落雪资源站都不提供。官方文档指向的 yuzuchan 网盘链接已失效（404）。需要从 [maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX) 项目的资源包或其他社区渠道获取 `Resource.7z`，解压后放入 `static/mai/`。
+资源体积较大（chu 约 30MB，mai 约 426MB），已全部加入 `.gitignore`，不入库。
 
-资源体积较大（chu 约 16MB，mai 约 426MB），已全部加入 `.gitignore`，不入库。
+### 中二成绩图 · 名片收藏品
+
+落雪开发者接口不返回玩家装备的 `name_plate`，因此成绩图不会自动带玩家的名牌底板。
+可以手动指定，让名片显示自己的收藏品：
+
+```bash
+# 全局默认底板
+CHU_NAME_PLATE_ID=8
+# 或按 QQ 号分别指定（JSON）
+CHU_NAME_PLATE_BY_USER={"484413313": 8, "2042006164": 23}
+```
+
+也可以在群里直接发 `/chu plate 8` 设置（结果存 `data/chu_name_plates.json`，重启后仍有效），
+`/chu plate 0` 用纯色底板。可选 ID 见 `static/chu/plate/`。
+
+名片右侧的信息面板会展示落雪接口确实返回的收藏品与资料：角色（名称 + 等级）、
+CLASS 勋章、转生次数、总游玩次数、OVER POWER、RATING 称号。
+
+### RATING 配色
+
+| Rating | 配色 |
+| --- | --- |
+| ≥ 17.00 | 彩极：黄 → 橙红 → 品红 → 紫 → 蓝 → 青 |
+| ≥ 16.00 | 彩：黄 → 黄绿 → 绿 → 青绿 → 青 |
+| 其余 | 金 / 银 / 铜 / 紫 / 红 / 橙 / 绿 |
+
+16+/17+ 两套渐变数字素材由 `tools/gen_rating_digits.py` 基于 LXNS 的 `rainbow`
+数字形状生成（保留黑色描边），重新生成：`./.venv/bin/python tools/gen_rating_digits.py`。

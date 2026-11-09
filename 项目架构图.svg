@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="720" viewBox="0 0 1100 720">
+<rect width="1100" height="720" fill="#ffffff"/>
+<text x="20" y="26" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="18" font-weight="700" fill="#202124">QQ Bot 系统架构图</text>
+<text x="20" y="44" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">NoneBot2 + NapCat · OneBot V11 反向 WebSocket</text>
+<defs>
+<marker id="arrowhead" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><polygon points="0,0 8,4 0,8" fill="#80868b"/></marker>
+</defs>
+<rect x="420" y="30" width="260" height="44" rx="10" ry="10" fill="#e8f0fe" stroke="#1a73e8" stroke-width="2"/>
+<text x="550.0" y="52" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="12.5" font-weight="600" fill="#1a73e8" text-anchor="middle">用户 QQ（手机/电脑客户端）</text>
+<rect x="340" y="130" width="420" height="90" rx="10" ry="10" fill="#fef7e0" stroke="#e8710a" stroke-width="2"/>
+<text x="550.0" y="152" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="12.5" font-weight="600" fill="#e8710a" text-anchor="middle">NapCat  (Docker 容器)</text>
+<text x="350" y="168" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">OneBot V11 协议端 · WebUI 127.0.0.1:6099</text>
+<text x="350" y="182" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">端口 3001 · QQ 登录态持久化于 data/qq/</text>
+<rect x="340" y="290" width="420" height="80" rx="10" ry="10" fill="#e6f4ea" stroke="#1e8e3e" stroke-width="2"/>
+<text x="550.0" y="312" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="12.5" font-weight="600" fill="#1e8e3e" text-anchor="middle">NoneBot2  (bot.py · 端口 8080)</text>
+<text x="350" y="328" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">反向 WS 路径 /onebot/v11/ws</text>
+<text x="350" y="342" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">FastAPI 驱动 · pyproject.toml plugin_dirs 自动发现</text>
+<rect x="30" y="430" width="190" height="110" rx="10" ry="10" fill="#f3e8fd" stroke="#9334e6" stroke-width="2"/>
+<text x="125.0" y="452" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="12.5" font-weight="600" fill="#9334e6" text-anchor="middle">group_events</text>
+<text x="40" y="468" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">欢迎新成员</text>
+<text x="40" y="482" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">戳一戳 (CD 10s)</text>
+<rect x="240" y="430" width="220" height="110" rx="10" ry="10" fill="#f3e8fd" stroke="#9334e6" stroke-width="2"/>
+<text x="350.0" y="452" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="12.5" font-weight="600" fill="#9334e6" text-anchor="middle">nonebot_plugin_rikka</text>
+<text x="250" y="468" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">★ 中二/舞萌查分出图</text>
+<text x="250" y="482" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">命令: /chu /mai /bind</text>
+<rect x="480" y="430" width="170" height="110" rx="10" ry="10" fill="#f3e8fd" stroke="#9334e6" stroke-width="2"/>
+<text x="565.0" y="452" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="12.5" font-weight="600" fill="#9334e6" text-anchor="middle">chunithm_bot</text>
+<text x="490" y="468" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">中二底力分析</text>
+<text x="490" y="482" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">命令: /chu plate</text>
+<rect x="670" y="430" width="170" height="110" rx="10" ry="10" fill="#f3e8fd" stroke="#9334e6" stroke-width="2"/>
+<text x="755.0" y="452" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="12.5" font-weight="600" fill="#9334e6" text-anchor="middle">ottohzys</text>
+<text x="680" y="468" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">活字印刷语音合成</text>
+<text x="680" y="482" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">命令: otto...</text>
+<rect x="860" y="430" width="210" height="110" rx="10" ry="10" fill="#f3e8fd" stroke="#9334e6" stroke-width="2"/>
+<text x="965.0" y="452" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="12.5" font-weight="600" fill="#9334e6" text-anchor="middle">mai_arcade</text>
+<text x="870" y="468" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">机厅人数上报/查询</text>
+<text x="870" y="482" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">命令: /机厅人数</text>
+<rect x="30" y="600" width="200" height="80" rx="10" ry="10" fill="#fce8e6" stroke="#d93025" stroke-width="2"/>
+<text x="130.0" y="622" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="12.5" font-weight="600" fill="#d93025" text-anchor="middle">落雪 API (lxns.net)</text>
+<text x="40" y="638" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">中二 B50/R50/玩家资料</text>
+<text x="40" y="652" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">Authorization 无 Bearer</text>
+<rect x="250" y="600" width="200" height="80" rx="10" ry="10" fill="#fce8e6" stroke="#d93025" stroke-width="2"/>
+<text x="350.0" y="622" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="12.5" font-weight="600" fill="#d93025" text-anchor="middle">水鱼 API (diving-fish)</text>
+<text x="260" y="638" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">舞萌 · QQ 号直查</text>
+<text x="260" y="652" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">AP50 受限</text>
+<rect x="470" y="600" width="200" height="80" rx="10" ry="10" fill="#f1f3f4" stroke="#5f6368" stroke-width="2"/>
+<text x="570.0" y="622" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="12.5" font-weight="600" fill="#5f6368" text-anchor="middle">CDN assets2.lxns.net</text>
+<text x="480" y="638" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">曲绘/名牌/段位/角色</text>
+<text x="480" y="652" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">免鉴权直连</text>
+<rect x="860" y="600" width="210" height="80" rx="10" ry="10" fill="#f1f3f4" stroke="#5f6368" stroke-width="2"/>
+<text x="965.0" y="622" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="12.5" font-weight="600" fill="#5f6368" text-anchor="middle">本地数据</text>
+<text x="870" y="638" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">data/chunithm.sqlite3 绑定</text>
+<text x="870" y="652" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#5f6368">data/rikka.sqlite3 | static/</text>
+<line x1="550" y1="74" x2="550" y2="130" stroke="#80868b" stroke-width="2" marker-end="url(#arrowhead)"/>
+<text x="554.0" y="98.0" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10.5" fill="#3c4043">QQ 消息</text>
+<line x1="490" y1="130" x2="490" y2="74" stroke="#80868b" stroke-width="2" marker-end="url(#arrowhead)"/>
+<text x="494.0" y="98.0" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10.5" fill="#3c4043">回复消息</text>
+<line x1="500" y1="220" x2="500" y2="290" stroke="#80868b" stroke-width="2" marker-end="url(#arrowhead)"/>
+<text x="504.0" y="251.0" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10.5" fill="#3c4043">反向 WebSocket</text>
+<line x1="600" y1="290" x2="600" y2="220" stroke="#80868b" stroke-width="2" marker-end="url(#arrowhead)"/>
+<text x="604.0" y="251.0" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10.5" fill="#3c4043">ws://host.docker.internal:8080</text>
+<line x1="550" y1="370" x2="550" y2="430" stroke="#80868b" stroke-width="2" marker-end="url(#arrowhead)"/>
+<text x="554.0" y="396.0" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10.5" fill="#3c4043">事件分发</text>
+<path d="M 250 540 L 250 568 L 110 596" fill="none" stroke="#80868b" stroke-width="2" marker-end="url(#arrowhead)"/>
+<text x="255" y="554" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10.5" fill="#3c4043">中二查分</text>
+<path d="M 300 540 L 300 568 L 360 596" fill="none" stroke="#80868b" stroke-width="2" marker-end="url(#arrowhead)"/>
+<text x="305" y="554" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10.5" fill="#3c4043">舞萌查分</text>
+<path d="M 400 540 L 400 568 L 520 596" fill="none" stroke="#80868b" stroke-width="2" marker-end="url(#arrowhead)"/>
+<text x="405" y="554" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10.5" fill="#3c4043">曲绘下载</text>
+<path d="M 465 540 L 465 568 L 245 596" fill="none" stroke="#80868b" stroke-width="2" marker-end="url(#arrowhead)"/>
+<text x="470" y="554" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10.5" fill="#3c4043">底力数据</text>
+<path d="M 450 540 L 450 568 L 880 596" fill="none" stroke="#80868b" stroke-width="2" marker-end="url(#arrowhead)"/>
+<text x="455" y="554" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10.5" fill="#3c4043">绑定/缓存</text>
+<path d="M 770 540 L 770 568 L 930 596" fill="none" stroke="#80868b" stroke-width="2" marker-end="url(#arrowhead)"/>
+<text x="775" y="554" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10.5" fill="#3c4043">音频/机厅</text>
+<rect x="20" y="700" width="14" height="14" rx="3" fill="#1a73e8"/>
+<text x="40" y="711" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#202124">用户</text>
+<rect x="72" y="700" width="14" height="14" rx="3" fill="#e8710a"/>
+<text x="92" y="711" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#202124">协议端</text>
+<rect x="132" y="700" width="14" height="14" rx="3" fill="#1e8e3e"/>
+<text x="152" y="711" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#202124">Bot 框架</text>
+<rect x="216" y="700" width="14" height="14" rx="3" fill="#9334e6"/>
+<text x="236" y="711" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#202124">插件</text>
+<rect x="268" y="700" width="14" height="14" rx="3" fill="#d93025"/>
+<text x="288" y="711" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#202124">外部 API</text>
+<rect x="352" y="700" width="14" height="14" rx="3" fill="#5f6368"/>
+<text x="372" y="711" font-family: -apple-system, 'PingFang SC', sans-serif; font-size="10" fill="#202124">本地/CDN</text>
+</svg>

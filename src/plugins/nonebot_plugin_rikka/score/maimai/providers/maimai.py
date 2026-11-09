@@ -129,34 +129,63 @@ class MaimaiPyScoreProvider(BaseScoreProvider[MaimaiPyParams]):
         """
         根据用户绑定情况自动获取合适的查分器
 
-        选择逻辑如下：
-        1. 如果仅配置了一个查分器的开发者密钥，则使用该查分器
-        2. 如果用户未绑定任何查分器，默认使用 LXNS 查分器
-        3. 如果用户绑定了查分器但未设置默认查分器，优先使用水鱼查分器（如果有绑定水鱼查分器），否则使用 LXNS 查分器
+        本项目默认「水鱼优先，落雪兜底」：水鱼 ``query/player`` 能用 QQ 号
+        直查，**不需要开发者密钥**；查不到（或水鱼不可用）时再回退落雪。
+
+        选择逻辑：
+        1. 用户显式设置过默认查分器 → 听从用户的
+        2. 其余情况 → 水鱼（QQ 号直查）
         """
         bind_info = await UserBindInfoORM.get_user_bind_info(session, user_id)
 
-        if config.lxns_developer_api_key and not config.divingfish_developer_api_key:
+        if bind_info and bind_info.default_provider == "lxns":
             return _lxns_provider
-        if config.divingfish_developer_api_key and not config.lxns_developer_api_key:
+
+        # 水鱼 QQ 直查不依赖任何密钥，始终可作为首选
+        return _divingfish_provider
+
+    @staticmethod
+    def _fallback_provider(provider: _SUPPORT_PROVIDER) -> Optional[_SUPPORT_PROVIDER]:
+        """返回兜底查分器：水鱼失败时用落雪，落雪失败时用水鱼。"""
+        if provider is _divingfish_provider and config.lxns_developer_api_key:
+            return _lxns_provider
+        if provider is _lxns_provider:
             return _divingfish_provider
+        return None
 
-        if not bind_info:
-            return _lxns_provider
+    @classmethod
+    async def fetch_b50_with_fallback(cls, provider, params) -> PlayerMaiB50:
+        """先按主查分器取 B50，为空或报错时自动切到兜底查分器。
 
-        if bind_info.default_provider is None:
-            if bind_info.diving_fish_oauth:
-                return _divingfish_provider
-            else:
-                return _lxns_provider
+        :param provider: 首选查分器实例
+        :param params: 对应的参数对象（不同查分器参数类型不同）
+        """
+        try:
+            b50 = await provider.fetch_player_b50(params)
+            if b50.standard or b50.dx:
+                return b50
+            logger.info(f"{provider.provider} 返回空 B50，尝试兜底查分器")
+        except Exception as e:
+            logger.info(f"{provider.provider} 查询 B50 失败({e})，尝试兜底查分器")
 
-        if bind_info.default_provider == "lxns":
-            return _lxns_provider
+        alt = cls._fallback_provider(provider)
+        if alt is None:
+            raise LookupError("没有可用的兜底查分器")
+        alt_params = await cls._rebuild_params_for(alt, params)
+        return await alt.fetch_player_b50(alt_params)
 
-        elif bind_info.default_provider == "divingfish":
-            return _divingfish_provider
+    @staticmethod
+    async def _rebuild_params_for(provider, params):
+        """用原参数里的 QQ 号重建目标查分器的参数对象。"""
+        from .diving_fish import DivingFishParams
+        from .lxns import LXNSParams
 
-        return _lxns_provider
+        qq = getattr(params, "qq", None) or getattr(params, "user_id", None)
+        friend_code = getattr(params, "friend_code", None)
+
+        if isinstance(provider, type(_divingfish_provider)):
+            return DivingFishParams(user_id=str(qq or ""), qq=str(qq) if qq else None)
+        return LXNSParams(friend_code=friend_code, qq=str(qq) if qq else None)
 
     @staticmethod
     async def auto_get_player_identifier(

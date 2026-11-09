@@ -43,6 +43,16 @@ class Config(BaseModel):
     scorelist_element_opacity: float = Field(1.0, le=1.0, ge=0.0)
     """成绩图元素不透明度"""
 
+    # 名片个性化：落雪开发者接口**只在玩家公开名牌时**才返回 name_plate，
+    # 不公开的玩家走自动兜底（挑一张有真实画面的底板，不会用 CDN 上那张
+    # 纯白的 plate/1）。这里允许按 QQ 号或全局指定底板 ID。
+    chu_name_plate_id: Optional[int] = None
+    """中二成绩图默认名牌底板 ID（对所有玩家生效）"""
+    chu_default_name_plate: Optional[int] = None
+    """兜底底板 ID；不填则自动挑一张有内容的底板。填 0 表示改用纯色底板"""
+    chu_name_plate_by_user: dict[str, int] = {}
+    """按 QQ 号指定的名牌底板 ID，优先于默认，例如 {"484413313": 8}"""
+
     enable_subscribe_function: bool = False
     """启用机厅列表更新订阅功能（需要平台支持，建议在测试后使用）"""
 

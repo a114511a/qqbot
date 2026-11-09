@@ -40,6 +40,8 @@ from .lxns import (
     fetch_recents,
     fetch_scores,
     fetch_song_list,
+    fetch_user_player,
+    fetch_user_scores,
     get_env,
     read_song_cache,
 )
@@ -224,13 +226,12 @@ def init_database() -> None:
         db.execute(
             "CREATE TABLE IF NOT EXISTS bindings ("
             "user_id TEXT PRIMARY KEY, friend_code TEXT NOT NULL, player_name TEXT NOT NULL, "
-            "confirmed_at TEXT NOT NULL)"
+            "confirmed_at TEXT NOT NULL, api_key TEXT NOT NULL DEFAULT '')"
         )
-        db.execute(
-            "CREATE TABLE IF NOT EXISTS pending_bindings ("
-            "user_id TEXT PRIMARY KEY, friend_code TEXT NOT NULL, player_name TEXT NOT NULL, "
-            "rating REAL, expires_at TEXT NOT NULL)"
-        )
+        # 老版本库没有 api_key 列；CREATE TABLE IF NOT EXISTS 不会补列，这里显式迁移。
+        columns = {row[1] for row in db.execute("PRAGMA table_info(bindings)")}
+        if "api_key" not in columns:
+            db.execute("ALTER TABLE bindings ADD COLUMN api_key TEXT NOT NULL DEFAULT ''")
     try:
         DATABASE_PATH.chmod(0o600)
     except OSError:
@@ -241,73 +242,12 @@ def get_binding(user_id: str) -> dict[str, str] | None:
     init_database()
     with sqlite3.connect(DATABASE_PATH) as db:
         row = db.execute(
-            "SELECT friend_code, player_name FROM bindings WHERE user_id = ?", (str(user_id),)
+            "SELECT friend_code, player_name, api_key FROM bindings WHERE user_id = ?",
+            (str(user_id),),
         ).fetchone()
     if row is None:
         return None
-    return {"friend_code": row[0], "player_name": row[1]}
-
-
-def remove_binding(user_id: str) -> None:
-    init_database()
-    with sqlite3.connect(DATABASE_PATH) as db:
-        db.execute("DELETE FROM bindings WHERE user_id = ?", (str(user_id),))
-        db.execute("DELETE FROM pending_bindings WHERE user_id = ?", (str(user_id),))
-
-
-def create_pending_binding(user_id: str, friend_code: str, player: dict[str, Any]) -> None:
-    """写入一条 10 分钟后过期的待确认绑定。
-
-    之所以不一步到位而是先待确认：好友码任何人都能查，
-    让用户先看到「查到的是谁」再手动确认，能挡住绝大多数填错好友码的情况。
-    """
-    init_database()
-    now = datetime.now(timezone.utc)
-    expires = now.timestamp() + 600
-    expiry_text = datetime.fromtimestamp(expires, timezone.utc).isoformat()
-    with sqlite3.connect(DATABASE_PATH) as db:
-        db.execute(
-            "INSERT OR REPLACE INTO pending_bindings "
-            "(user_id, friend_code, player_name, rating, expires_at) VALUES (?, ?, ?, ?, ?)",
-            (
-                str(user_id),
-                friend_code,
-                str(player.get("name") or "未命名玩家"),
-                player.get("rating"),
-                expiry_text,
-            ),
-        )
-
-
-def confirm_binding(user_id: str) -> dict[str, Any] | None:
-    """把待确认记录转成正式绑定；没有待确认或已超时返回 None。"""
-    init_database()
-    now = datetime.now(timezone.utc)
-    with sqlite3.connect(DATABASE_PATH) as db:
-        row = db.execute(
-            "SELECT friend_code, player_name, rating, expires_at FROM pending_bindings WHERE user_id = ?",
-            (str(user_id),),
-        ).fetchone()
-        if row is None:
-            return None
-        try:
-            expired = datetime.fromisoformat(row[3]) <= now
-        except ValueError:
-            expired = True
-        if expired:
-            db.execute("DELETE FROM pending_bindings WHERE user_id = ?", (str(user_id),))
-            return None
-        db.execute(
-            "INSERT OR REPLACE INTO bindings (user_id, friend_code, player_name, confirmed_at) "
-            "VALUES (?, ?, ?, ?)",
-            (str(user_id), row[0], row[1], now.isoformat()),
-        )
-        db.execute("DELETE FROM pending_bindings WHERE user_id = ?", (str(user_id),))
-    try:
-        DATABASE_PATH.chmod(0o600)
-    except OSError:
-        pass
-    return {"friend_code": row[0], "player_name": row[1], "rating": row[2]}
+    return {"friend_code": row[0], "player_name": row[1], "api_key": row[2] or ""}
 
 
 def _unwrap(payload: Any) -> Any:
@@ -1697,27 +1637,49 @@ async def generate_ai_summary(report: dict[str, Any]) -> str | None:
         return None
 
 
-async def fetch_report(friend_code: str) -> dict[str, Any]:
+async def fetch_report(friend_code: str, api_key: str = "") -> dict[str, Any]:
     """取数 + 计算，产出可直接渲染的报告字典。
 
-    取数全部交给 lxns.py：玩家资料、曲目目录、三个成绩端点并发拉。
+    取数全部交给 lxns.py：玩家资料、曲目目录、成绩端点并发拉。
     这里只负责把原始响应归一化成「曲目+难度 → 一条成绩」，再交给 compute_report。
     数据源差异（哪个带分数、哪个覆盖全）的说明见 lxns.fetch_all_scores 的注释。
+
+    ``api_key`` 非空时改用个人 API：一次拿到玩家**全部**带具体分数的成绩，
+    比开发者接口（bests/recents 覆盖少、scores 没分数）更适合底力分析。
     """
-    player_task = fetch_player(friend_code)
-    songs_task = fetch_song_list()
-    scores_task = fetch_all_scores(friend_code)
-    player, song_data, raw = await asyncio.gather(player_task, songs_task, scores_task)
+    if api_key:
+        player_task = fetch_user_player(api_key)
+        scores_task = fetch_user_scores(api_key)
+    else:
+        player_task = fetch_player(friend_code)
+        scores_task = fetch_all_scores(friend_code)
+    player, song_data, raw = await asyncio.gather(
+        player_task, fetch_song_list(), scores_task
+    )
 
     if not isinstance(player, dict):
         raise AnalysisError("落雪没有返回玩家资料。")
-    # 三者按「曲目+难度」去重时保留分数更高的一条，所以有分数的记录优先。
-    # raw["scores"] / raw["recents"] 在补充源失败时为 None，_extract_bests 会返回空列表。
-    scores = _merge_scores(
-        _extract_bests(raw["bests"])
-        + _extract_bests(raw.get("scores"))
-        + _extract_bests(raw.get("recents"))
-    )
+
+    if api_key:
+        # 个人接口返回裸列表，每条都带具体分数。
+        scores = _merge_scores(_extract_bests(raw))
+        if not scores:
+            # 密钥有效但个人接口没有成绩时，退回开发者接口，避免直接报空。
+            fallback = await fetch_all_scores(friend_code)
+            scores = _merge_scores(
+                _extract_bests(fallback["bests"])
+                + _extract_bests(fallback.get("scores"))
+                + _extract_bests(fallback.get("recents"))
+            )
+    else:
+        # 三者按「曲目+难度」去重时保留分数更高的一条，所以有分数的记录优先。
+        # raw["scores"] / raw["recents"] 在补充源失败时为 None，_extract_bests 会返回空列表。
+        scores = _merge_scores(
+            _extract_bests(raw["bests"])
+            + _extract_bests(raw.get("scores"))
+            + _extract_bests(raw.get("recents"))
+        )
+
     if not scores:
         raise AnalysisError(
             "落雪没有返回可分析的成绩（/bests、/scores、/recents 都是空的）。请确认成绩已同步，"
@@ -2247,24 +2209,3 @@ def napcat_report_path(path: Path) -> str:
     return f"file:///app/qqbot-reports/{path.name}"
 
 
-def player_confirmation_text(player: dict[str, Any]) -> str:
-    """绑定第一步的确认提示：展示查到的玩家，提醒 10 分钟内确认。
-
-    只认好友码，所以这里把玩家名和好友码都摆出来，让用户自己确认没填错。
-    """
-    rating = player.get("rating")
-    rating_text = f"Rating {float(rating):.2f}" if isinstance(rating, (int, float)) else "Rating 暂不可用"
-    name = str(player.get("name") or "未命名玩家")
-    code = player.get("friend_code")
-    code_text = f"，好友码 {code}" if code else ""
-    return (
-        f"查到落雪玩家：{name}（{rating_text}{code_text}）。"
-        "确认是你本人后，请在 10 分钟内发送 /中二绑定确认。绑定不会索要落雪密码。"
-    )
-
-
-def binding_confirmation_text(binding: dict[str, Any]) -> str:
-    """绑定成功提示。"""
-    rating = binding.get("rating")
-    rating_text = f"，Rating {float(rating):.2f}" if isinstance(rating, (int, float)) else ""
-    return f"已绑定落雪玩家「{binding['player_name']}」{rating_text}。之后发送 /底力分析 即可查询。"

@@ -37,13 +37,11 @@ LOG_PATH = Path("/tmp/qqbot_smoke_test.log")
 CHECKS: list[tuple[str, bool, list[str]]] = [
     ("/help", False, ["/help mai", "/help chu", "/help bind", "索引"]),
     ("/help mai", True, ["舞萌", "/mai b50"]),
-    ("/help chu", True, ["中二节奏", "/chu b30", "/底力分析"]),
+    ("/help chu", True, ["中二节奏", "/chu b50", "/底力分析"]),
     ("/help bind", False, ["/bind lxns", "共用"]),
     ("/菜单", True, ["/help mai", "索引"]),
     ("/hello", True, ["喊我干啥"]),
     ("/底力分析", True, ["绑定"]),
-    ("/中二绑定状态", False, ["没有绑定"]),
-    ("/中二绑定", True, ["用法"]),
 ]
 
 

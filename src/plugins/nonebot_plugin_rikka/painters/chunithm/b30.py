@@ -19,8 +19,8 @@ class DrawChuBest(ScoreBaseImage):
 
         sections = [
             (bests.bests, 30),
-            (bests.selections, 10),
             (bests.new_bests, 20),
+            (bests.selections, 10),
         ]
         total = self.header_h + self.section_gap + self.footer_h
         for scores, limit in sections:
@@ -34,9 +34,9 @@ class DrawChuBest(ScoreBaseImage):
         y = self.header_h + self.section_gap
         y = self._draw_section(y, "BEST 30", bests.bests, 30, SEC_B30_COLOR)
         y += self.section_gap
-        y = self._draw_section(y, "SELECTION 10", bests.selections, 10, SEC_S10_COLOR)
-        y += self.section_gap
         y = self._draw_section(y, "NEW 20", bests.new_bests, 20, SEC_N20_COLOR)
+        y += self.section_gap
+        y = self._draw_section(y, "SELECTION 10（S10不计入B50）", bests.selections, 10, SEC_S10_COLOR)
 
         self._draw_footer()
 

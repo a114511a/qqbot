@@ -86,6 +86,12 @@ def main() -> int:
     check("舞萌 provider 复用共享令牌", "get_shared_lxns_token" in mai_provider)
     # 绑定时回写
     check("绑定后回写共享表", "save_shared_friend_code(user_id" in alconna_src)
+    check("提供 get_shared_api_key", "def get_shared_api_key" in shared_src)
+    check("提供 save_shared_api_key", "def save_shared_api_key" in shared_src)
+    check("_get_chu_params 回退共享密钥", "get_shared_api_key(user_id)" in alconna_src)
+    check("绑定密钥后回写共享密钥", "save_shared_api_key(user_id, key)" in alconna_src)
+    check("提供 delete_shared_binding", "def delete_shared_binding" in shared_src)
+    check("解绑落雪时清理共享绑定", "delete_shared_binding(user_id)" in alconna_src)
 
     print("\n=== 4. help 索引结构 ===")
     for const in ("HELP_INDEX", "HELP_MAI", "HELP_CHU", "HELP_BIND"):
@@ -104,6 +110,54 @@ def main() -> int:
     check("无 location handler", "handle_location" not in alconna_src)
     check("无 location 导入", "from .functions.location import" not in alconna_src)
     check("无店铺查询帮助文案", "店铺查询" not in alconna_src)
+
+    print("\n=== 6. 支持 @某人 查询他人成绩 ===")
+    check("存在 _get_at_target", "def _get_at_target" in alconna_src)
+    target_args = alconna_src.count('Args["target?", At]')
+    check("b30/r50/ap50 接受 @ 参数", target_args >= 3, f"共 {target_args} 处")
+    check(
+        "成绩指令优先取 @ 目标",
+        alconna_src.count("_get_at_target(event) or event.get_user_id()") >= 5,
+    )
+    check("支持前置 @ 写法", "_normalize_chu_leading_at" in alconna_src)
+    # 心跳/通知事件调用 get_message() 会抛 NotImplementedError，预处理器不能这样判断类型
+    normalize_block = alconna_src.split("async def _normalize_chu_leading_at", 1)[1].split(
+        "def _get_at_target", 1
+    )[0]
+    check("预处理器只处理消息事件", 'getattr(event, "message", None)' in normalize_block)
+    normalize_code = "\n".join(
+        line for line in normalize_block.splitlines() if not line.strip().startswith("#")
+    )
+    check("预处理器不调用 get_message()", "get_message()" not in normalize_code)
+    check(
+        "score 曲名参数已 strip",
+        'raw_query = name.result.extract_plain_text().strip()\n'
+        '    logger.info(f"[{user_id}] 查询单曲游玩情况' in alconna_src,
+    )
+
+    print("\n=== 7. 绑定指令隐私保护 ===")
+    check("存在敏感参数脱敏扩展", "class _MaskSensitiveExtension" in alconna_src)
+    check("bind 匹配器启用脱敏", "extensions=[_MaskSensitiveExtension]" in alconna_src)
+    check("支持 /bind <密钥> 简写", 'Args["api_key?", str]' in alconna_src)
+    check("主处理器兼容密钥简写", "兼容 /bind <密钥> 的写法" in alconna_src)
+    check("绑定密钥时自动保存好友码", "set_user_chu_friend_code" in alconna_src)
+    check("自动绑定好友码提示", "已自动绑定中二好友码" in alconna_src)
+
+    print("\n=== 8. scorelist 排序 ===")
+    check(
+        "scorelist 按实际分数降序",
+        "filtered_scores.sort(key=lambda s: (s.score, s.rating), reverse=True)" in alconna_src,
+    )
+
+    print("\n=== 9. 底力分析密钥绑定 ===")
+    chu_commands = (PROJECT_ROOT / "src/plugins/chunithm_bot/commands.py").read_text(encoding="utf-8")
+    chu_analysis = (PROJECT_ROOT / "src/plugins/chunithm_bot/analysis.py").read_text(encoding="utf-8")
+    chu_lxns = (PROJECT_ROOT / "src/plugins/chunithm_bot/lxns.py").read_text(encoding="utf-8")
+    check("底力分析不再注册绑定指令", "on_command(\"中二绑定\"" not in chu_commands)
+    check("未绑定时引导 /bind", "/bind lxns <好友码>" in chu_commands)
+    check("分析接受 api_key", "async def fetch_report(friend_code: str, api_key: str" in chu_analysis)
+    check("绑密钥时使用个人接口", "fetch_user_scores(api_key)" in chu_analysis)
+    check("个人密钥走 X-User-Token", '"X-User-Token"' in chu_lxns)
 
     print(f"\n共 {CHECKS} 项检查")
     if FAILURES:

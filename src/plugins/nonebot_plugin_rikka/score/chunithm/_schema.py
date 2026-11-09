@@ -134,6 +134,8 @@ class PlayerChuInfo:
     """好友码"""
     level: int = 0
     """玩家等级"""
+    level_hidden: bool = False
+    """玩家选择不公开等级（落雪不返回 level / reborn_count），此时显示 **"""
     class_emblem_base: int = 0
     """CLASS 勋章 - 缎带"""
     class_emblem_medal: int = 0
@@ -150,12 +152,22 @@ class PlayerChuInfo:
     """称号详情"""
     character_id: Optional[int] = None
     """角色 ID"""
+    character_name: Optional[str] = None
+    """角色名称（收藏品）"""
+    character_level: int = 0
+    """角色等级（收藏品）"""
+    reborn_count: int = 0
+    """转生次数（Lv 旁边的星星）"""
+    rating_possession: Optional[str] = None
+    """RATING 称号（normal / platina / rainbow ...）"""
     name_plate_id: Optional[int] = None
     """名牌版 ID"""
     map_icon_id: Optional[int] = None
     """地图头像 ID"""
     upload_time: Optional[str] = None
     """同步时间"""
+    user_id: Optional[str] = None
+    """发起查询的 QQ 号（用于按用户配置名片底板）"""
 
 
 @dataclass

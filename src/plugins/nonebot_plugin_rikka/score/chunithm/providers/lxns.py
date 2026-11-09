@@ -122,7 +122,17 @@ class LXNSChuScoreProvider:
 
     @staticmethod
     def _score_unpack(raw_score: dict) -> PlayerChuScore:
-        """将 API 返回的原始成绩数据解包为 PlayerChuScore。"""
+        """将 API 返回的原始成绩数据解包为 PlayerChuScore。
+
+        LXNS 不同端点返回的字段差异很大，这里统一补齐必填字段：
+
+        - ``/bests`` ``/recents``：带 score / rating / over_power
+        - ``/scores``：只有评级和 FC 标记，**没有** score / rating / over_power
+        - FAILED 成绩：可能连 ``over_power`` 都不返回（实测 /recents 里就有）
+
+        缺字段时填 0 / 空串，保证 PlayerChuScore 能构造出来，不让单条脏数据
+        毁掉整个列表渲染。
+        """
         raw_score = raw_score.copy()
 
         raw_score["song_difficulty"] = ChuDifficulty(raw_score["level_index"])
@@ -138,6 +148,16 @@ class LXNSChuScoreProvider:
 
         valid_keys = {f.name for f in fields(PlayerChuScore)}
         filtered = {k: v for k, v in raw_score.items() if k in valid_keys}
+
+        # 必填字段兜底：/scores 缺数值，FAILED 成绩缺 over_power
+        filtered.setdefault("score", 0)
+        filtered.setdefault("rating", 0.0)
+        filtered.setdefault("over_power", 0.0)
+        filtered["score"] = filtered["score"] or 0
+        filtered["rating"] = filtered["rating"] or 0.0
+        filtered["over_power"] = filtered["over_power"] or 0.0
+        filtered["song_name"] = filtered.get("song_name") or ""
+        filtered["song_level"] = filtered.get("song_level") or ""
 
         return PlayerChuScore(**filtered)
 
@@ -165,11 +185,18 @@ class LXNSChuScoreProvider:
                 color=trophy_info.get("color", "normal"),
             )
 
+        # 玩家可以在游戏里选择「不公开等级」，此时落雪不返回 level / reborn_count。
+        # 用 level_hidden 标记，渲染时把 Lv 和星星里的数字都显示成 **。
+        raw_level = raw_info.get("level")
+        raw_reborn = raw_info.get("reborn_count")
+        level_hidden = raw_level is None and raw_reborn is None
+
         return PlayerChuInfo(
             name=raw_info["name"],
             rating=raw_info["rating"],
             friend_code=raw_info["friend_code"],
-            level=raw_info.get("level", 0),
+            level=int(raw_level or 0),
+            level_hidden=level_hidden,
             class_emblem_base=class_emblem.get("base", 0),
             class_emblem_medal=class_emblem.get("medal", 0),
             over_power=raw_info.get("over_power", 0.0),
@@ -178,6 +205,10 @@ class LXNSChuScoreProvider:
             trophy_id=trophy.get("id") if trophy else None,
             trophy=chu_trophy,
             character_id=character.get("id") if character else None,
+            character_name=character.get("name") if character else None,
+            character_level=character.get("level", 0) if character else 0,
+            reborn_count=int(raw_reborn or 0),
+            rating_possession=raw_info.get("rating_possession"),
             name_plate_id=name_plate.get("id") if name_plate else None,
             map_icon_id=map_icon.get("id") if map_icon else None,
             upload_time=raw_info.get("upload_time"),
@@ -236,7 +267,9 @@ class LXNSChuScoreProvider:
 
         data = await self._get_resp(endpoint, self._developer_api_key)
         raw_info = data["data"]
-        return self._info_unpack(raw_info)
+        info = self._info_unpack(raw_info)
+        info.user_id = params.qq
+        return info
 
     async def fetch_player_info_by_user_token(self, auth_token: str) -> PlayerChuInfo:
         """通过个人 API 获取玩家信息。"""

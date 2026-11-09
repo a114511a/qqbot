@@ -221,6 +221,28 @@ class ChuPicRenderer:
         except Exception as e:
             logger.error(f"下载乐曲 {song_id} 封面失败: {e}")
 
+    async def _ensure_covers(self, song_ids: list[int]) -> None:
+        """并发确保一批封面存在。
+
+        旧实现在 render 里逐个 await，玩家有几十首新曲时会串行排队数分钟，
+        超时后就渲染成灰白方块。直连下载后可以并发。
+        """
+        import asyncio
+
+        todo = list(dict.fromkeys(song_ids))
+        todo = [i for i in todo if not (CHU_COVER_DIR / f"{i}.png").exists()]
+        if not todo:
+            return
+        logger.warning(f"缺少 {len(todo)} 张中二封面，开始并发下载...")
+        results = await asyncio.gather(
+            *(download_chu_jacket(str(i)) for i in todo), return_exceptions=True
+        )
+        failed = [i for i, r in zip(todo, results) if isinstance(r, BaseException)]
+        if failed:
+            logger.error(f"以下封面下载失败（将显示占位图）: {failed[:20]}")
+        else:
+            logger.info(f"{len(todo)} 张中二封面下载完成")
+
     async def _validate_player_resources(self, player_info: PlayerChuInfo) -> None:
         """确保玩家相关资源存在（角色图标/称号）。"""
         if player_info.character_id:
@@ -250,9 +272,10 @@ class ChuPicRenderer:
         :param bests: Best 30 + Selection 10 + New 20 数据
         :return: PNG 图片字节流
         """
-        # 确保封面资源
-        for score in bests.bests + bests.selections + bests.new_bests:
-            await self._ensure_cover(score.song_id)
+        # 确保封面资源（并发）
+        await self._ensure_covers(
+            [s.song_id for s in bests.bests + bests.selections + bests.new_bests]
+        )
 
         # 确保玩家资源
         await self._validate_player_resources(player_info)
@@ -269,9 +292,8 @@ class ChuPicRenderer:
         # Ensure player assets
         await self._validate_player_resources(player_info)
 
-        # Ensure covers
-        for score in scores:
-            await self._ensure_cover(score.song_id)
+        # Ensure covers（并发）
+        await self._ensure_covers([s.song_id for s in scores])
 
         img = self.drawer_score.draw_scorelist(player_info, scores, title or "Player Scores")
         return image_to_bytes(img)

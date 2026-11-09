@@ -6,7 +6,7 @@
     ├── __init__.py   插件入口：声明元信息，加载子模块
     ├── lxns.py       落雪 API 客户端：URL、鉴权、错误翻译、曲目缓存（只管「怎么问落雪」）
     ├── analysis.py   数据层：绑定库、统计、AI 简报、报告图片渲染（只管「数据怎么算」）
-    └── commands.py   指令层：/中二绑定系列、/底力分析（只管「跟用户怎么聊」）
+    └── commands.py   指令层：/底力分析（只管「跟用户怎么聊」）
 
 依赖方向是单向的：commands → analysis → lxns，没有反向依赖。
 要给插件加新的落雪能力（例如查趋势、查单曲排名），优先在 lxns.py 里加一个
@@ -37,8 +37,8 @@ __plugin_meta__ = PluginMetadata(
     name="中二节奏底力分析",
     description="查询落雪（LXNS）中二节奏成绩，生成底力分析图片报告。",
     usage=(
-        "/中二绑定 好友码 完成绑定后，发送 /底力分析 生成报告。"
-        "群聊、私聊都可用；发送 /help 查看全部指令。"
+        "先用查分插件的 /bind lxns <好友码> 或 /bind key <个人密钥> 绑定落雪，"
+        "再发送 /底力分析 生成报告。群聊、私聊都可用；发送 /help 查看全部指令。"
     ),
     type="application",
     homepage="",
@@ -47,3 +47,6 @@ __plugin_meta__ = PluginMetadata(
 
 # 导入子模块，导入即注册对应的指令 matcher。
 from . import commands  # noqa: E402,F401
+
+# 启动时就把绑定库（含 api_key 列）准备好，查分插件的共享密钥才有地方可写。
+init_database()

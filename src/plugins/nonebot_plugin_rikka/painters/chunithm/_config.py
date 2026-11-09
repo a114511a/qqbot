@@ -16,6 +16,10 @@ FONT_DIR = CHU_DIR / "font"
 ICON_DIR = CHU_DIR / "icon"
 PLATE_DIR = CHU_DIR / "plate"
 TROPHY_DIR = CHU_DIR / "trophy"
+# CLASS 段位素材：缎带 base-N.webp（1~6）与勋章 medal-N.webp（1~6）。
+# 落雪 assets2 没有提供段位图标，这里放的是社区整理的 game 素材副本，
+# 缺失时绘制逻辑会静默跳过，不影响出图。
+CLASS_DIR = CHU_DIR / "class"
 # 自定义成绩图背景。b30_bg.png 是本项目放进去的浅色主题背景；
 # 文件不存在时回退到内置的深色点阵背景。
 BG_DIR = CHU_DIR / "bg"
@@ -45,12 +49,14 @@ RATING_COLORS = {
 }
 
 # Difficulty colors
+# 边框取色偏「饱和主色」，避免在白底上显得灰扑扑分不清档位：
+# EXPERT 用正红（原 255,90,102 偏粉，和 ADVANCED 的黄、MASTER 的紫区分度不够）。
 DIFF_COLORS = [
     (69, 193, 36),  # BASIC - 绿
     (255, 186, 1),  # ADVANCED - 黄
-    (255, 90, 102),  # EXPERT - 红
+    (230, 32, 48),  # EXPERT - 正红
     (134, 49, 200),  # MASTER - 紫
-    (25, 25, 25),  # ULTIMA - 黑
+    (70, 70, 75),  # ULTIMA - 深灰（黑框在白底上过冲，改用深灰）
 ]
 
 # Score to rank mapping
@@ -129,9 +135,11 @@ TROPHY_COLOR_INDEX = {
 }
 
 # Rating threshold to color name mapping
+# 16.00+ 用「彩」黄绿青渐变（图2），17.00+ 用「彩极」黄→品红→青蓝渐变（图3）。
+# rainbow1 / rainbow2 素材由 tools/gen_rating_digits.py 基于 rainbow 数字形状生成。
 RATING_COLOR_NAME = {
-    17.00: "rainbow",
-    16.00: "platinum",
+    17.00: "rainbow2",
+    16.00: "rainbow1",
     15.25: "gold",
     14.50: "sliver",
     13.25: "bronze",
