@@ -17,6 +17,7 @@ import asyncio
 import json
 import math
 import sqlite3
+import sys
 import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -1692,21 +1693,81 @@ async def fetch_report(friend_code: str, api_key: str = "") -> dict[str, Any]:
     return report
 
 
-def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    # 优先使用系统简体中文字体，Arial Unicode 在部分 macOS 上会被 Pillow 渲染成方框。
-    candidates = [
-        "/System/Library/Fonts/STHeiti Medium.ttc",
-        "/System/Library/Fonts/Hiragino Sans GB.ttc",
-        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Arial.ttf",
+_FONT_PATH_CACHE: dict[bool, str] = {}
+
+
+def _font_candidates(bold: bool) -> list[Path]:
+    """按平台列出候选中文字体，优先系统字体，再用项目自带的字体资源兜底。"""
+    if sys.platform == "darwin":
+        system = [
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+            "/System/Library/Fonts/Hiragino Sans GB.ttc",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+            "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+            if bold
+            else "/System/Library/Fonts/Supplemental/Arial.ttf",
+        ]
+    elif sys.platform == "win32":
+        system = [
+            "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
+            "C:/Windows/Fonts/simhei.ttf",
+            "C:/Windows/Fonts/simsun.ttc",
+            "C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf",
+        ]
+    else:
+        # 覆盖 Debian/Ubuntu、Fedora、Arch、Alpine 等常见发行版的字体路径。
+        system = [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
+            if bold
+            else "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/source-han-sans/SourceHanSansSC-Bold.otf"
+            if bold
+            else "/usr/share/fonts/opentype/source-han-sans/SourceHanSansSC-Regular.otf",
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+            "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            if bold
+            else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+
+    # 项目自带资源：装了静态资源包时即使系统没有中文字体也能正常出图。
+    bundled = [
+        PROJECT_ROOT / "static" / "font" / "ResourceHanRoundedCN-Bold.ttf",
+        PROJECT_ROOT / "static" / "chu" / "font" / "FOT-RodinNTLGPro-B.otf",
+        PROJECT_ROOT / "static" / "chu" / "font" / "FOT-RodinNTLGPro-EB.otf",
     ]
-    for candidate in candidates:
-        if Path(candidate).exists():
-            try:
-                return ImageFont.truetype(candidate, size=size)
-            except OSError:
-                continue
-    return ImageFont.load_default()
+    return [Path(p) for p in system] + bundled
+
+
+def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """加载可显示中文的字体，兼容 macOS、Windows 和 Linux。"""
+    cached = _FONT_PATH_CACHE.get(bold)
+    if cached:
+        try:
+            return ImageFont.truetype(cached, size=size)
+        except OSError:
+            _FONT_PATH_CACHE.pop(bold, None)
+
+    for path in _font_candidates(bold):
+        if not path.exists():
+            continue
+        try:
+            font = ImageFont.truetype(str(path), size=size)
+        except OSError:
+            continue
+        _FONT_PATH_CACHE[bold] = str(path)
+        return font
+
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
 
 
 # 折行时不允许出现在行首的收尾标点（中文避头尾规则）。
